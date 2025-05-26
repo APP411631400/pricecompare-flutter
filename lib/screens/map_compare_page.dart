@@ -102,74 +102,151 @@ class _MapComparePageState extends State<MapComparePage> {
 
   // ✅ 顯示標記紀錄對話框（動態從後端載入圖片）
   void _showRecordDialog(ScanRecord record) async {
-    String? imageBase64;
+  String? imageBase64;
 
-    // ✅ 1. 請求圖片（從後端 /image/<id>）
-    try {
-      final url = Uri.parse("https://acdb-api.onrender.com/image/${record.id}");
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
-        imageBase64 = result['imageBase64'];
-      }
-    } catch (e) {
-      print("❌ 圖片載入失敗：$e");
+  // ✅ 取得圖片
+  try {
+    final url = Uri.parse("https://acdb-api.onrender.com/image/${record.id}");
+    final response = await http.get(url);
+    if (response.statusCode == 200) {
+      final result = jsonDecode(response.body);
+      imageBase64 = result['imageBase64'];
     }
+  } catch (e) {
+    print("❌ 圖片載入失敗：$e");
+  }
 
-    // ✅ 2. 顯示 AlertDialog，包含圖片、價格與時間
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(record.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (imageBase64 != null)
-              Image.memory(base64Decode(imageBase64), height: 150, fit: BoxFit.cover)
-            else
-              const Text("（無圖片）"),
-            const SizedBox(height: 10),
-            Text('價格：\$${record.price?.toStringAsFixed(0) ?? '未知'}'),
-            Text('時間：${record.timestamp.toLocal()}'),
-          ],
+  // ✅ 顯示主對話框
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(record.name),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (imageBase64 != null)
+            Image.memory(base64Decode(imageBase64), height: 150, fit: BoxFit.cover)
+          else
+            const Text("（無圖片）"),
+          const SizedBox(height: 10),
+          Text('價格：\$${record.price?.toStringAsFixed(0) ?? '未知'}'),
+          Text('店家：${record.store}'),
+          Text('時間：${record.timestamp.toLocal()}'),
+        ],
+      ),
+      actions: [
+        // ✅ 編輯按鈕：打開編輯 Dialog
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context); // 關閉主對話框
+            _showEditDialog(record); // ➤ 顯示編輯畫面
+          },
+          child: const Text('編輯', style: TextStyle(color: Colors.blue)),
         ),
-        actions: [
-          // ✅ 刪除紀錄
-          TextButton(
-            onPressed: () async {
-              await StoreService().deleteScanRecordFromDatabase(record);
-              scanHistory.removeWhere((r) => r.id == record.id);
-              await saveScanHistory();
-              Navigator.pop(context);
-              await _loadAndMarkStores();
-            },
-            child: const Text('刪除紀錄', style: TextStyle(color: Colors.red)),
-          ),
-          // ✅ 前往比價頁
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ComparePage(
-                    barcode: record.barcode.isNotEmpty ? record.barcode : null,
-                    keyword: record.name.isNotEmpty ? record.name : null,
-                  ),
+        // ✅ 查看比價
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ComparePage(
+                  barcode: record.barcode.isNotEmpty ? record.barcode : null,
+                  keyword: record.name.isNotEmpty ? record.name : null,
                 ),
-              );
-            },
-            child: const Text('查看比價'),
-          ),
-          // ✅ 關閉對話框
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('關閉'),
+              ),
+            );
+          },
+          child: const Text('查看比價'),
+        ),
+        // ✅ 刪除紀錄
+        TextButton(
+          onPressed: () async {
+            await StoreService().deleteScanRecordFromDatabase(record);
+            scanHistory.removeWhere((r) => r.id == record.id);
+            await saveScanHistory();
+            Navigator.pop(context);
+            await _loadAndMarkStores();
+          },
+          child: const Text('刪除', style: TextStyle(color: Colors.red)),
+        ),
+        // ✅ 關閉
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('關閉'),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showEditDialog(ScanRecord record) {
+  final nameCtrl = TextEditingController(text: record.name);
+  final storeCtrl = TextEditingController(text: record.store);
+  final priceCtrl = TextEditingController(text: record.price?.toString() ?? '');
+
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('編輯回報資料'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '商品名稱')),
+          TextField(controller: storeCtrl, decoration: const InputDecoration(labelText: '店家名稱')),
+          TextField(
+            controller: priceCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: '價格'),
           ),
         ],
       ),
-    );
-  }
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        ElevatedButton(
+          onPressed: () async {
+            final newName = nameCtrl.text.trim();
+            final newStore = storeCtrl.text.trim();
+            final newPrice = double.tryParse(priceCtrl.text.trim());
+
+            if (newName.isEmpty || newStore.isEmpty || newPrice == null || newPrice <= 0) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 請輸入有效資料')));
+              return;
+            }
+
+            Navigator.pop(context); // 關閉 Dialog
+
+            // ✅ 呼叫後端 API 更新
+            final res = await http.post(
+              Uri.parse("https://acdb-api.onrender.com/update"),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                "id": record.id,
+                "name": newName,
+                "store": newStore,
+                "price": newPrice,
+              }),
+            );
+
+            if (res.statusCode == 200 && jsonDecode(res.body)['status'] == 'success') {
+              setState(() {
+                record.name = newName;
+                record.store = newStore;
+                record.price = newPrice;
+              });
+              await _loadAndMarkStores();
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 更新成功')));
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 更新失敗')));
+            }
+          },
+          child: const Text('儲存'),
+        ),
+      ],
+    ),
+  );
+}
+
 
   @override
   Widget build(BuildContext context) {

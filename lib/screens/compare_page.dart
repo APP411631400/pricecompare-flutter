@@ -1,14 +1,13 @@
-// ----------------------------- ComparePage.dart（整合後端真實資料 + 修正查詢跳錯誤視窗問題 + 完整中文註解）-----------------------------
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart'; // 📍 取得 GPS 位置
-import 'package:url_launcher/url_launcher.dart'; // 🔗 開啟商品連結
-import '../services/favorite_service.dart'; // ❤️ 收藏服務（本地儲存）
-import '../data/scan_history.dart'; // 📝 拍照或掃碼紀錄儲存結構
-import '../services/product_service.dart' as ps; // ⭐ 使用後端 Product 並避免名稱衝突
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/favorite_service.dart';
+import '../data/scan_history.dart';
+import '../services/product_service.dart' as ps;
 
 class ComparePage extends StatefulWidget {
-  final String? barcode; // 📥 條碼掃描後傳入
-  final String? keyword; // 📥 拍照辨識後傳入
+  final String? barcode;
+  final String? keyword;
 
   const ComparePage({Key? key, this.barcode, this.keyword}) : super(key: key);
 
@@ -17,9 +16,9 @@ class ComparePage extends StatefulWidget {
 }
 
 class _ComparePageState extends State<ComparePage> {
-  ps.Product? product; // ✅ 查詢到的商品資料
-  bool isFavorite = false; // ❤️ 收藏狀態
-  bool _isLoading = true; // 🔄 加入 loading 狀態避免 build 過早顯示錯誤畫面
+  ps.Product? product;
+  bool isFavorite = false;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -27,79 +26,69 @@ class _ComparePageState extends State<ComparePage> {
     _initProduct();
   }
 
-  /// 🔍 根據條碼或關鍵字查詢商品（從後端 API）
+  /// ✅ 根據條碼或關鍵字初始化商品資料
   Future<void> _initProduct() async {
-  try {
-    if (widget.keyword != null && widget.keyword!.trim().isNotEmpty) {
-      final raw = widget.keyword!;
-
-      // ✅ 改為模糊查詢 Top 3 筆商品（可自行調整數量）
-      final candidates = await ps.ProductService.fuzzyMatchTopN(raw, 3);
-
-      if (candidates.isEmpty) {
-        product = null;
-      } else if (candidates.length == 1) {
-        // ✅ 只有一筆時自動採用
-        product = candidates.first;
-      } else {
-        // ✅ 多筆時讓使用者挑選
-        product = await _showProductSelectionDialog(candidates);
+    try {
+      if (widget.keyword != null && widget.keyword!.trim().isNotEmpty) {
+        final raw = widget.keyword!;
+        final candidates = await ps.ProductService.fuzzyMatchTopN(raw, 3);
+        if (candidates.isEmpty) {
+          product = null;
+        } else if (candidates.length == 1) {
+          product = candidates.first;
+        } else {
+          product = await _showProductSelectionDialog(candidates);
+        }
+      } else if (widget.barcode != null && widget.barcode!.isNotEmpty) {
+        final list = await ps.ProductService.search(widget.barcode!);
+        product = list.isNotEmpty ? list.first : null;
       }
-    } else if (widget.barcode != null && widget.barcode!.isNotEmpty) {
-      final list = await ps.ProductService.search(widget.barcode!);
-      product = list.isNotEmpty ? list.first : null;
+
+      if (product != null) {
+        isFavorite = await FavoriteService.isFavorited(product!.name);
+      }
+    } catch (e) {
+      print('❌ 商品查詢失敗: $e');
+      product = null;
     }
 
-    if (product != null) {
-      isFavorite = await FavoriteService.isFavorited(product!.name);
-    }
-  } catch (e) {
-    print('❌ 商品查詢失敗: $e');
-    product = null;
+    setState(() {
+      _isLoading = false;
+    });
   }
 
-  setState(() {
-    _isLoading = false;
-  });
-}
-
-
-/// ✅ 顯示商品選單讓使用者選擇正確比對商品
-Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async {
-  return await showDialog<ps.Product>(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text('辨識結果 - 請選擇商品'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: products.length,
-            separatorBuilder: (_, __) => const Divider(),
-            itemBuilder: (context, index) {
-              final p = products[index];
-              return ListTile(
-                leading: Image.network(p.imageUrl, width: 50, errorBuilder: (_, __, ___) => const Icon(Icons.image)),
-                title: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                subtitle: Text('店家：${p.store}'),
-                onTap: () => Navigator.pop(context, p), // ✅ 回傳選中的商品
-              );
-            },
+  /// ✅ 當有多個候選商品時顯示選擇對話框
+  Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async {
+    return await showDialog<ps.Product>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('辨識結果 - 請選擇商品'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: products.length,
+              separatorBuilder: (_, __) => const Divider(),
+              itemBuilder: (context, index) {
+                final p = products[index];
+                return ListTile(
+                  leading: const Icon(Icons.shopping_cart),
+                  title: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  onTap: () => Navigator.pop(context, p),
+                );
+              },
+            ),
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('取消'))
-        ],
-      );
-    },
-  );
-}
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('取消'))
+          ],
+        );
+      },
+    );
+  }
 
-
-
-
-  /// 💗 收藏狀態切換（加入或移除）
+  /// ✅ 收藏切換邏輯
   Future<void> _toggleFavorite() async {
     if (product == null) return;
     setState(() => isFavorite = !isFavorite);
@@ -110,7 +99,7 @@ Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async
     }
   }
 
-  /// 📩 顯示價格回報視窗（拍照限定）
+  /// ✅ 顯示價格回報視窗
   Future<void> _showReportDialog() async {
     final controller = TextEditingController();
     showDialog(
@@ -140,7 +129,7 @@ Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async
                   longitude: pos.longitude,
                   price: price,
                   name: product!.name,
-                  store: product!.store,
+                  store: "使用者回報",
                   imagePath: null,
                 ),
               );
@@ -171,6 +160,12 @@ Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async
       );
     }
 
+    // ✅ 找出最低價格（排除 0 或無效價格）
+    final validPrices = product!.prices.entries.where((e) => e.value > 0).toList();
+    final double? minPrice = validPrices.isNotEmpty
+        ? validPrices.map((e) => e.value).reduce((a, b) => a < b ? a : b)
+        : null;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('比價結果'),
@@ -190,40 +185,75 @@ Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ✅ 商品名稱區
             Center(
               child: Column(
                 children: [
-                  Image.network(
-                    product!.imageUrl,
-                    width: 100,
-                    height: 100,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported),
-                  ),
+                  const Icon(Icons.shopping_cart, size: 80),
                   const SizedBox(height: 8),
                   Text(product!.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text("分類：${product!.category}"),
-                  Text("店家：${product!.store}"),
-                  const SizedBox(height: 10),
-                  Text("原價：\$${product!.originalPrice.toStringAsFixed(0)}",
-                      style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)),
-                  Text("特價：\$${product!.salePrice.toStringAsFixed(0)}",
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red)),
-                  const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final uri = Uri.parse(product!.link);
-                      if (await canLaunchUrl(uri)) await launchUrl(uri);
-                    },
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text("前往商品頁面"),
-                  )
                 ],
               ),
             ),
 
+            const SizedBox(height: 24),
+            const Text('📊 電商平台價格比較', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+
+            // ✅ 展示價格清單（加上最低價標籤🔥）
+            Column(
+              children: product!.prices.entries.map((entry) {
+                final platform = entry.key;
+                final price = entry.value;
+                final url = product!.links[platform];
+                final isLowest = (minPrice != null && price == minPrice);
+
+                return Card(
+                  child: ListTile(
+                    title: Row(
+                      children: [
+                        Text(platform),
+                        if (isLowest)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              '🔥 最低',
+                              style: TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: price > 0
+                        ? Text('價格：\$${price.toStringAsFixed(0)}')
+                        : const Text('無價格資料'),
+                    trailing: url != null && url.isNotEmpty && price > 0
+                        ? IconButton(
+                            icon: const Icon(Icons.open_in_new),
+                            onPressed: () async {
+                              final uri = Uri.parse(url);
+                              if (await canLaunchUrl(uri)) {
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('❌ 無法開啟連結')),
+                                );
+                              }
+                            },
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                );
+              }).toList(),
+            ),
+
             const SizedBox(height: 20),
 
-            // 📩 僅拍照模式顯示價格回報按鈕
+            // ✅ 顯示回報按鈕（限拍照模式）
             if (widget.keyword != null)
               Center(
                 child: ElevatedButton.icon(
@@ -238,6 +268,8 @@ Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async
     );
   }
 }
+
+
 
 
 

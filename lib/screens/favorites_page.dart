@@ -19,27 +19,32 @@ class _FavoritesPageState extends State<FavoritesPage> {
     _loadFavorites();
   }
 
-  /// ✅ 重新載入收藏商品（從 FavoriteService 抓 barcode，再從 API 查詢完整資料）
+  /// ✅ 載入收藏商品（直接從 FavoriteService 取得所有 Product）
   Future<void> _loadFavorites() async {
-    final names = await FavoriteService.getFavoriteNames();
-    final allProducts = await ps.ProductService.fetchAll();
+    final result = await FavoriteService.getFavorites(); // 已是完整 ps.Product 清單
     setState(() {
-      favorites = allProducts.where((p) => names.contains(p.name)).toList();
+      favorites = result;
     });
   }
 
-  /// ✅ 移除指定收藏商品
-  Future<void> _removeFavorite(String barcode) async {
-    await FavoriteService.removeFromFavorites(barcode);
+  /// ✅ 移除收藏
+  Future<void> _removeFavorite(String name) async {
+    await FavoriteService.removeFromFavorites(name);
     await _loadFavorites();
+  }
+
+  /// ✅ 計算最低價與來源平台
+  MapEntry<String, double>? _findLowestPrice(ps.Product product) {
+    final validPrices = product.prices.entries.where((e) => e.value > 0).toList();
+    if (validPrices.isEmpty) return null;
+    validPrices.sort((a, b) => a.value.compareTo(b.value));
+    return validPrices.first;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('我的收藏'),
-      ),
+      appBar: AppBar(title: const Text('我的收藏')),
       body: RefreshIndicator(
         onRefresh: _loadFavorites,
         child: favorites.isEmpty
@@ -48,24 +53,16 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 itemCount: favorites.length,
                 itemBuilder: (context, index) {
                   final product = favorites[index];
+                  final lowest = _findLowestPrice(product);
+
                   return Card(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: ListTile(
-                      leading: Image.network(
-                        product.imageUrl,
-                        width: 50,
-                        height: 50,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported),
-                      ),
-                      title: Text(product.name),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('分類：${product.category}'),
-                          Text('店家：${product.store}'),
-                          Text('原價：\$${product.originalPrice.toStringAsFixed(0)}'),
-                        ],
-                      ),
+                      leading: const Icon(Icons.favorite, color: Colors.red), // 沒圖片就用心 icon
+                      title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: lowest != null
+                          ? Text('最低價：\$${lowest.value.toStringAsFixed(0)}（${lowest.key}）')
+                          : const Text('無價格資料'),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete, color: Colors.grey),
                         onPressed: () => _removeFavorite(product.name),
@@ -77,7 +74,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                             builder: (_) => ComparePage(barcode: product.name),
                           ),
                         );
-                        _loadFavorites();
+                        _loadFavorites(); // 回來後重新刷新收藏
                       },
                     ),
                   );
@@ -87,5 +84,6 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
   }
 }
+
 
 

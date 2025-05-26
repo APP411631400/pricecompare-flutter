@@ -1,5 +1,3 @@
-// ✅ home_page.dart（整合分類與店家篩選 + 完整註解 + 保留原有邏輯）
-
 import 'package:flutter/material.dart';
 import 'barcode_scan_page.dart';
 import 'scan_history_page.dart';
@@ -11,8 +9,8 @@ import 'ai_page.dart';
 import 'user_page.dart';
 import 'take_photo_page.dart';
 
-import '../services/product_service.dart' as ps; // ✅ 用 as ps 匯入，避免與其他 Product 衝突
-import '../services/user_service.dart'; // ✅ 匯入使用者服務（取得登入者名稱）
+import '../services/product_service.dart' as ps;
+import '../services/user_service.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -21,16 +19,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   TextEditingController _searchController = TextEditingController();
-  List<ps.Product> searchResults = []; // ✅ 搜尋後的商品結果（尚未過濾）
+  List<ps.Product> searchResults = [];
 
-  // ✅ 使用者名稱（登入後顯示）
   String? _userName;
-
-  // ✅ 選單篩選狀態與選項
-  String? selectedCategory;
-  String? selectedStore;
-  List<String> categoryOptions = [];
-  List<String> storeOptions = [];
 
   @override
   void initState() {
@@ -39,7 +30,7 @@ class _HomePageState extends State<HomePage> {
     _loadUserName();
   }
 
-  /// ✅ 從 SharedPreferences 取得登入使用者名稱（UserService）
+  /// ✅ 從 SharedPreferences 取得使用者名稱
   void _loadUserName() async {
     final name = await UserService.getUserName();
     setState(() {
@@ -47,18 +38,11 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// ✅ 關鍵字搜尋（從後端 API），同時整理分類與店家選單
+  /// ✅ 呼叫後端搜尋 API
   Future<void> _search(String query) async {
     final results = await ps.ProductService.search(query);
-    final categories = results.map((p) => p.category).toSet().toList();
-    final stores = results.map((p) => p.store).toSet().toList();
-
     setState(() {
       searchResults = results;
-      categoryOptions = categories;
-      storeOptions = stores;
-      selectedCategory = null;
-      selectedStore = null;
     });
 
     if (results.isEmpty) {
@@ -75,23 +59,20 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// ✅ 清除搜尋條件與結果
+  /// ✅ 清除搜尋欄與結果
   void _clearSearch() {
     _searchController.clear();
     setState(() {
       searchResults.clear();
-      selectedCategory = null;
-      selectedStore = null;
     });
   }
 
-  /// ✅ 根據目前的分類與店家選擇篩選商品列表
-  List<ps.Product> get _filteredResults {
-    return searchResults.where((p) {
-      final matchCategory = selectedCategory == null || p.category == selectedCategory;
-      final matchStore = selectedStore == null || p.store == selectedStore;
-      return matchCategory && matchStore;
-    }).toList();
+  /// ✅ 找出最低價與平台（如 momo: $159）
+  MapEntry<String, double>? _findLowestPrice(ps.Product product) {
+    final validPrices = product.prices.entries.where((e) => e.value > 0).toList();
+    if (validPrices.isEmpty) return null;
+    validPrices.sort((a, b) => a.value.compareTo(b.value));
+    return validPrices.first;
   }
 
   @override
@@ -102,7 +83,6 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // ✅ 歡迎詞
             if (_userName != null)
               Align(
                 alignment: Alignment.centerLeft,
@@ -113,7 +93,7 @@ class _HomePageState extends State<HomePage> {
               ),
             const SizedBox(height: 12),
 
-            // ✅ 搜尋欄位
+            /// ✅ 搜尋欄
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
@@ -128,12 +108,11 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 20),
 
-            // ✅ 有搜尋結果時才顯示下拉選單與結果列表
+            /// ✅ 有搜尋結果就顯示列表，否則顯示主功能
             if (searchResults.isNotEmpty)
               Expanded(
                 child: Column(
                   children: [
-                    // ✅ 搜尋條件區 + 清除按鈕
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -145,78 +124,29 @@ class _HomePageState extends State<HomePage> {
                         )
                       ],
                     ),
-                    const SizedBox(height: 8),
-
-                    // ✅ 分類與店家選單
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButton<String>(
-                            value: selectedCategory,
-                            hint: Text("分類"),
-                            isExpanded: true,
-                            items: [null, ...categoryOptions].map((c) {
-                              return DropdownMenuItem(
-                                value: c,
-                                child: Text(c ?? "全部分類"),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() => selectedCategory = value);
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: DropdownButton<String>(
-                            value: selectedStore,
-                            hint: Text("店家"),
-                            isExpanded: true,
-                            items: [null, ...storeOptions].map((s) {
-                              return DropdownMenuItem(
-                                value: s,
-                                child: Text(s ?? "全部店家"),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() => selectedStore = value);
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
                     const SizedBox(height: 10),
 
-                    // ✅ 商品列表（依照篩選後結果）
+                    /// ✅ 顯示搜尋結果（商品名稱 + 最低價）
                     Expanded(
                       child: ListView.builder(
-                        itemCount: _filteredResults.length,
+                        itemCount: searchResults.length,
                         itemBuilder: (context, index) {
-                          final product = _filteredResults[index];
+                          final product = searchResults[index];
+                          final lowest = _findLowestPrice(product);
+
                           return Card(
                             elevation: 2,
                             child: ListTile(
-                              leading: Image.network(
-                                product.imageUrl,
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Icon(Icons.image_not_supported),
-                              ),
+                              leading: Icon(Icons.shopping_cart),
                               title: Text(product.name),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("分類：${product.category}"),
-                                  Text("店家：${product.store}"),
-                                  Text("原價：\$${product.originalPrice.toStringAsFixed(0)}"),
-                                ],
-                              ),
+                              subtitle: lowest != null
+                                  ? Text("最低價：\$${lowest.value.toStringAsFixed(0)}（${lowest.key}）")
+                                  : Text("點我查看比價"),
                               trailing: Icon(Icons.chevron_right),
                               onTap: () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => ComparePage(barcode: product.name), // 🔁 未來接入 barcode
+                                  builder: (_) => ComparePage(barcode: product.name),
                                 ),
                               ),
                             ),
@@ -228,7 +158,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               )
             else
-              // ✅ 主功能入口
+              /// ✅ 主功能快速入口
               Expanded(
                 child: ListView(
                   children: [
@@ -260,16 +190,19 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// ✅ 標題區塊樣式
   Widget _sectionTitle(String title) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
         child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
       );
 
+  /// ✅ 卡片列排版
   Widget _functionRow(List<Widget> cards) => Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: cards,
       );
 
+  /// ✅ 功能卡片樣式
   Widget _functionCard(IconData icon, String label, Widget page, Color color) => Expanded(
         child: InkWell(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
@@ -293,6 +226,7 @@ class _HomePageState extends State<HomePage> {
         ),
       );
 }
+
 
 
 

@@ -125,7 +125,7 @@ class StoreService {
             timestamp: DateTime.tryParse(row['時間']) ?? DateTime.now(),
             latitude: double.tryParse(parts[0]) ?? 0,
             longitude: double.tryParse(parts[1]) ?? 0,
-            store: row['來源'] ?? "API",
+            store: row['位置描述'] ?? '未知店家',
             imagePath: null, // 圖片尚未還原
           ));
         }
