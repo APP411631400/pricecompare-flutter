@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/favorite_service.dart';
-import '../data/scan_history.dart';
 import '../services/product_service.dart' as ps;
 
 class ComparePage extends StatefulWidget {
   final String? barcode;
   final String? keyword;
 
-  const ComparePage({Key? key, this.barcode, this.keyword}) : super(key: key);
+  // ✅ 新增：來自地圖或拍照的實體價格資料
+  final String? fromStore;
+  final double? fromPrice;
+
+  const ComparePage({
+    Key? key,
+    this.barcode,
+    this.keyword,
+    this.fromStore,
+    this.fromPrice,
+  }) : super(key: key);
 
   @override
   State<ComparePage> createState() => _ComparePageState();
@@ -26,19 +34,16 @@ class _ComparePageState extends State<ComparePage> {
     _initProduct();
   }
 
-  /// ✅ 根據條碼或關鍵字初始化商品資料
   Future<void> _initProduct() async {
     try {
       if (widget.keyword != null && widget.keyword!.trim().isNotEmpty) {
         final raw = widget.keyword!;
         final candidates = await ps.ProductService.fuzzyMatchTopN(raw, 3);
-        if (candidates.isEmpty) {
-          product = null;
-        } else if (candidates.length == 1) {
-          product = candidates.first;
-        } else {
-          product = await _showProductSelectionDialog(candidates);
-        }
+        product = candidates.isEmpty
+            ? null
+            : candidates.length == 1
+                ? candidates.first
+                : await _showProductSelectionDialog(candidates);
       } else if (widget.barcode != null && widget.barcode!.isNotEmpty) {
         final list = await ps.ProductService.search(widget.barcode!);
         product = list.isNotEmpty ? list.first : null;
@@ -52,12 +57,9 @@ class _ComparePageState extends State<ComparePage> {
       product = null;
     }
 
-    setState(() {
-      _isLoading = false;
-    });
+    setState(() => _isLoading = false);
   }
 
-  /// ✅ 當有多個候選商品時顯示選擇對話框
   Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async {
     return await showDialog<ps.Product>(
       context: context,
@@ -81,14 +83,13 @@ class _ComparePageState extends State<ComparePage> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('取消'))
+            TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('取消')),
           ],
         );
       },
     );
   }
 
-  /// ✅ 收藏切換邏輯
   Future<void> _toggleFavorite() async {
     if (product == null) return;
     setState(() => isFavorite = !isFavorite);
@@ -97,52 +98,6 @@ class _ComparePageState extends State<ComparePage> {
     } else {
       await FavoriteService.removeFromFavorites(product!.name);
     }
-  }
-
-  /// ✅ 顯示價格回報視窗
-  Future<void> _showReportDialog() async {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('回報價格'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: '請輸入價格 (NT\$)'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final price = double.tryParse(controller.text);
-              if (price == null || price <= 0) return;
-
-              final pos = await Geolocator.getCurrentPosition();
-
-              scanHistory.add(
-                ScanRecord(
-                  barcode: widget.barcode ?? '',
-                  timestamp: DateTime.now(),
-                  latitude: pos.latitude,
-                  longitude: pos.longitude,
-                  price: price,
-                  name: product!.name,
-                  store: "使用者回報",
-                  imagePath: null,
-                ),
-              );
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('✅ 已成功回報價格！')),
-              );
-            },
-            child: const Text('送出'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -160,10 +115,14 @@ class _ComparePageState extends State<ComparePage> {
       );
     }
 
-    // ✅ 找出最低價格（排除 0 或無效價格）
-    final validPrices = product!.prices.entries.where((e) => e.value > 0).toList();
-    final double? minPrice = validPrices.isNotEmpty
-        ? validPrices.map((e) => e.value).reduce((a, b) => a < b ? a : b)
+    // ✅ 統整所有價格來源：平台價格 + 實體價格（若有）
+    final allPrices = [
+      ...product!.prices.entries.map((e) => e.value),
+      if (widget.fromPrice != null) widget.fromPrice!,
+    ];
+
+    final double? minPrice = allPrices.isNotEmpty
+        ? allPrices.where((p) => p > 0).reduce((a, b) => a < b ? a : b)
         : null;
 
     return Scaffold(
@@ -185,7 +144,6 @@ class _ComparePageState extends State<ComparePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ✅ 商品名稱區
             Center(
               child: Column(
                 children: [
@@ -195,12 +153,42 @@ class _ComparePageState extends State<ComparePage> {
                 ],
               ),
             ),
-
             const SizedBox(height: 24),
-            const Text('📊 電商平台價格比較', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('📊 比價清單', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
 
-            // ✅ 展示價格清單（加上最低價標籤🔥）
+            // ✅ 加入實體店報價卡片（若有）
+            if (widget.fromStore != null && widget.fromPrice != null)
+              Card(
+                color: Colors.yellow[100],
+                child: ListTile(
+                  leading: const Icon(Icons.store),
+                  title: Row(
+                    children: [
+                      Text(widget.fromStore!),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (minPrice != null && widget.fromPrice == minPrice)
+                              ? Colors.redAccent
+                              : Colors.teal,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          (minPrice != null && widget.fromPrice == minPrice)
+                              ? '🔥 最低'
+                              : '你現場看到的價格',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  subtitle: Text('價格：\$${widget.fromPrice!.toStringAsFixed(0)}'),
+                ),
+              ),
+
+            // ✅ 顯示平台價格列表
             Column(
               children: product!.prices.entries.map((entry) {
                 final platform = entry.key;
@@ -252,22 +240,14 @@ class _ComparePageState extends State<ComparePage> {
             ),
 
             const SizedBox(height: 20),
-
-            // ✅ 顯示回報按鈕（限拍照模式）
-            if (widget.keyword != null)
-              Center(
-                child: ElevatedButton.icon(
-                  onPressed: _showReportDialog,
-                  icon: const Icon(Icons.add_location_alt),
-                  label: const Text('我要回報價格'),
-                ),
-              ),
           ],
         ),
       ),
     );
   }
 }
+
+
 
 
 

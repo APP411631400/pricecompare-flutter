@@ -153,6 +153,8 @@ class _MapComparePageState extends State<MapComparePage> {
                 builder: (_) => ComparePage(
                   barcode: record.barcode.isNotEmpty ? record.barcode : null,
                   keyword: record.name.isNotEmpty ? record.name : null,
+                  fromStore: record.store,
+                  fromPrice: record.price,
                 ),
               ),
             );
