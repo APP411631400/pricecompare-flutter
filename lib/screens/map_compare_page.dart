@@ -120,6 +120,7 @@ class _MapComparePageState extends State<MapComparePage> {
   showDialog(
     context: context,
     builder: (_) => AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20.0),
       title: Text(record.name),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -135,49 +136,62 @@ class _MapComparePageState extends State<MapComparePage> {
         ],
       ),
       actions: [
-        // ✅ 編輯按鈕：打開編輯 Dialog
-        TextButton(
-          onPressed: () {
-            Navigator.pop(context); // 關閉主對話框
-            _showEditDialog(record); // ➤ 顯示編輯畫面
-          },
-          child: const Text('編輯', style: TextStyle(color: Colors.blue)),
-        ),
-        // ✅ 查看比價
-        TextButton(
-          onPressed: () {
-            Navigator.pop(context);
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ComparePage(
-                  barcode: record.barcode.isNotEmpty ? record.barcode : null,
-                  keyword: record.name.isNotEmpty ? record.name : null,
-                  fromStore: record.store,
-                  fromPrice: record.price,
-                ),
+  Row(
+    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    children: [
+      // ✅ 編輯按鈕
+      TextButton(
+        onPressed: () {
+          Navigator.pop(context);
+          _showEditDialog(record);
+        },
+        child: const Text('編輯', style: TextStyle(color: Colors.blue)),
+      ),
+
+      // ✅ 查看比價
+      TextButton(
+        onPressed: () {
+          Navigator.pop(context);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ComparePage(
+                barcode: record.barcode.isNotEmpty ? record.barcode : null,
+                keyword: record.name.isNotEmpty ? record.name : null,
+                fromStore: record.store,
+                fromPrice: record.price,
               ),
-            );
-          },
-          child: const Text('查看比價'),
-        ),
-        // ✅ 刪除紀錄
-        TextButton(
-          onPressed: () async {
-            await StoreService().deleteScanRecordFromDatabase(record);
-            scanHistory.removeWhere((r) => r.id == record.id);
-            await saveScanHistory();
-            Navigator.pop(context);
-            await _loadAndMarkStores();
-          },
-          child: const Text('刪除', style: TextStyle(color: Colors.red)),
-        ),
-        // ✅ 關閉
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('關閉'),
-        ),
-      ],
+            ),
+          );
+        },
+        child: const Text('查看比價'),
+      ),
+
+      // ✅ 刪除紀錄
+      TextButton(
+        onPressed: () async {
+          await StoreService().deleteScanRecordFromDatabase(record);
+          scanHistory.removeWhere((r) => r.id == record.id);
+          await saveScanHistory();
+          Navigator.pop(context);
+          await _loadAndMarkStores();
+        },
+        child: const Text('刪除', style: TextStyle(color: Colors.red)),
+      ),
+
+      // ✅ 關閉
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('關閉'),
+      ),
+    ],
+  )
+],
+
+
+
+
+
     ),
   );
 }
