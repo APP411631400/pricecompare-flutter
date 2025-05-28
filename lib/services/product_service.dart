@@ -7,18 +7,22 @@ class Product {
   final int id;                      // 商品 ID
   final Map<String, double> prices; // 各平台價格對照表，例如 {"momo": 159, "博客來": 149}
   final Map<String, String> links;  // 各平台商品連結對照表，例如 {"momo": "...", "博客來": "..."}
+  final Map<String, String> images;
+
 
   Product({
     required this.name,
     required this.id,
     required this.prices,
     required this.links,
+    required this.images,
   });
 
   /// ✅ 從 JSON 建立 Product 實體
   factory Product.fromJson(Map<String, dynamic> json) {
     final Map<String, double> prices = {};
     final Map<String, String> links = {};
+    final Map<String, String> images = {};
 
     // ✅ 支援的比價平台（需與後端欄位一致）
     final List<String> platforms = ['momo', 'pchome', '博客來', '屈臣氏', '康是美'];
@@ -26,8 +30,10 @@ class Product {
     for (final platform in platforms) {
       final priceKey = '${platform}_價格';
       final urlKey = '${platform}_網址';
+      final imageKey = '${platform}_圖片';
       prices[platform] = _parsePrice(json[priceKey]);
       links[platform] = json[urlKey] ?? '';
+      images[platform] = json[imageKey] ?? '';
     }
 
     return Product(
@@ -35,6 +41,7 @@ class Product {
       id: int.tryParse(json['商品ID'].toString()) ?? 0,
       prices: prices,
       links: links,
+      images: images,
     );
   }
 

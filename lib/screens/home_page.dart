@@ -133,11 +133,14 @@ class _HomePageState extends State<HomePage> {
                         itemBuilder: (context, index) {
                           final product = searchResults[index];
                           final lowest = _findLowestPrice(product);
+                          final imageUrl = lowest != null ? product.images[lowest.key] ?? '' : '';
 
                           return Card(
                             elevation: 2,
                             child: ListTile(
-                              leading: Icon(Icons.shopping_cart),
+                              leading: imageUrl.isNotEmpty
+                                  ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover)
+                                  : Icon(Icons.image_not_supported),
                               title: Text(product.name),
                               subtitle: lowest != null
                                   ? Text("最低價：\$${lowest.value.toStringAsFixed(0)}（${lowest.key}）")

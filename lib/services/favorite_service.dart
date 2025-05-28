@@ -49,6 +49,7 @@ class FavoriteService {
         id: item['id'] ?? 0,
         prices: Map<String, double>.from(item['prices'] ?? {}),
         links: Map<String, String>.from(item['links'] ?? {}),
+        images: Map<String, String>.from(item['images'] ?? {}),
       );
     }).toList();
   }

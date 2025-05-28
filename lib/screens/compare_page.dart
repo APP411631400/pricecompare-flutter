@@ -197,45 +197,55 @@ class _ComparePageState extends State<ComparePage> {
                 final isLowest = (minPrice != null && price == minPrice);
 
                 return Card(
-                  child: ListTile(
-                    title: Row(
-                      children: [
-                        Text(platform),
-                        if (isLowest)
-                          Container(
-                            margin: const EdgeInsets.only(left: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              borderRadius: BorderRadius.circular(12),
+                    child: ListTile(
+                      leading: (product!.images[platform] ?? '').isNotEmpty
+                          ? Image.network(
+                              product!.images[platform]!,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image),
+                            )
+                          : const Icon(Icons.image_not_supported),
+                      title: Row(
+                        children: [
+                          Text(platform),
+                          if (isLowest)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                '🔥 最低',
+                                style: TextStyle(color: Colors.white, fontSize: 12),
+                              ),
                             ),
-                            child: const Text(
-                              '🔥 最低',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
-                            ),
-                          ),
-                      ],
+                        ],
+                      ),
+                      subtitle: price > 0
+                          ? Text('價格：\$${price.toStringAsFixed(0)}')
+                          : const Text('無價格資料'),
+                      trailing: url != null && url.isNotEmpty && price > 0
+                          ? IconButton(
+                              icon: const Icon(Icons.open_in_new),
+                              onPressed: () async {
+                                final uri = Uri.parse(url);
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('❌ 無法開啟連結')),
+                                  );
+                                }
+                              },
+                            )
+                          : const SizedBox.shrink(),
                     ),
-                    subtitle: price > 0
-                        ? Text('價格：\$${price.toStringAsFixed(0)}')
-                        : const Text('無價格資料'),
-                    trailing: url != null && url.isNotEmpty && price > 0
-                        ? IconButton(
-                            icon: const Icon(Icons.open_in_new),
-                            onPressed: () async {
-                              final uri = Uri.parse(url);
-                              if (await canLaunchUrl(uri)) {
-                                await launchUrl(uri, mode: LaunchMode.externalApplication);
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('❌ 無法開啟連結')),
-                                );
-                              }
-                            },
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                );
+                  );
+
               }).toList(),
             ),
 
