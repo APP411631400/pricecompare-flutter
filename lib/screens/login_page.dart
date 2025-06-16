@@ -4,18 +4,22 @@ import 'home_page.dart';               // 登入成功後跳轉至主畫面
 import '../services/user_service.dart'; // 使用者登入邏輯處理
 import 'register_page.dart';          // 可跳轉至註冊頁
 
+
 class LoginPage extends StatefulWidget {
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
+
 
 class _LoginPageState extends State<LoginPage> {
   // 📌 控制使用者輸入 Email 與密碼
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
+
   bool _isLoading = false;   // 📌 控制登入按鈕轉圈圈狀態
   String? _errorMessage;     // 📌 顯示錯誤訊息（如帳密錯誤）
+
 
   /// ✅ 登入流程（支援模擬帳號 + 資料庫帳號）
   Future<void> _login() async {
@@ -24,8 +28,10 @@ class _LoginPageState extends State<LoginPage> {
       _errorMessage = null;
     });
 
+
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+
 
     // ✅ 基本輸入欄位檢查
     if (email.isEmpty || password.isEmpty) {
@@ -36,9 +42,11 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
+
     try {
       // ✅ 呼叫 UserService 驗證帳號（可能是模擬或後端）
       final isValid = await UserService.validateCredentials(email, password);
+
 
       if (isValid) {
         // ✅ 登入成功 → 跳轉首頁並移除返回堆疊
@@ -66,6 +74,7 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -86,6 +95,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 16),
 
+
             // 🔐 密碼輸入欄位
             TextField(
               controller: _passwordController,
@@ -97,6 +107,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 24),
 
+
             // ❗ 錯誤提示區塊（如果帳密錯誤或 API 失敗）
             if (_errorMessage != null)
               Text(
@@ -104,6 +115,7 @@ class _LoginPageState extends State<LoginPage> {
                 style: TextStyle(color: Colors.red),
               ),
             const SizedBox(height: 16),
+
 
             // 🔘 登入按鈕（點擊觸發登入流程）
             ElevatedButton(
@@ -113,7 +125,9 @@ class _LoginPageState extends State<LoginPage> {
                   : const Text('登入'),
             ),
 
+
             const SizedBox(height: 20),
+
 
             // 🆕 尚未註冊的提示 + 註冊頁連結按鈕
             TextButton(
@@ -134,6 +148,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
+
 
 
 

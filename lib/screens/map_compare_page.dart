@@ -97,6 +97,45 @@ class _MapComparePageState extends State<MapComparePage> {
       }
     }
 
+          // ✅ 額外標記「Google 地圖附近店家」
+      if (_currentPosition != null) {
+        try {
+          const String apiKey = 'AIzaSyD7anVSRtxnFU9XimXMfLOmrqc0mEnZxfY'; // ❗換成你自己的 API 金鑰
+          final String url =
+              'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
+              '?location=${_currentPosition!.latitude},${_currentPosition!.longitude}'
+              '&rankby=distance'
+              '&type=store'
+              '&key=$apiKey';
+
+          final response = await http.get(Uri.parse(url));
+          final data = jsonDecode(response.body);
+
+          if (response.statusCode == 200 && data['status'] == 'OK') {
+            for (var place in data['results'].take(6)) {
+              final name = place['name'];
+              final lat = place['geometry']['location']['lat'];
+              final lng = place['geometry']['location']['lng'];
+
+              markers.add(Marker(
+                markerId: MarkerId('place_$name'),
+                position: LatLng(lat, lng),
+                infoWindow: InfoWindow(
+                  title: name,
+                  snippet: 'Google 附近店家',
+                ),
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+              ));
+            }
+          } else {
+            print('❌ Google Places API 錯誤：${data['status']}');
+          }
+        } catch (e) {
+          print('❌ 取得附近店家失敗：$e');
+        }
+      }
+
+
     setState(() => _markers = markers.toSet());
   }
 
@@ -196,11 +235,48 @@ class _MapComparePageState extends State<MapComparePage> {
   );
 }
 
-void _showEditDialog(ScanRecord record) {
+// 🔁 新版：附近店家選單 + 保留原有店名邏輯
+void _showEditDialog(ScanRecord record) async {
   final nameCtrl = TextEditingController(text: record.name);
-  final storeCtrl = TextEditingController(text: record.store);
   final priceCtrl = TextEditingController(text: record.price?.toString() ?? '');
 
+  String selectedStore = record.store ?? ''; // 👉 初始為原本的店家
+
+  // ✅ 呼叫 Google Places API 抓附近店家（取最多 5 間）
+  List<String> nearbyStores = [];
+  if (_currentPosition != null) {
+    try {
+      const String apiKey = 'AIzaSyD7anVSRtxnFU9XimXMfLOmrqc0mEnZxfY'; // ❗請換成你自己的金鑰
+      final String url =
+          'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
+          '?location=${_currentPosition!.latitude},${_currentPosition!.longitude}'
+          '&rankby=distance'
+          '&type=store'
+          '&key=$apiKey';
+
+      final response = await http.get(Uri.parse(url));
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['status'] == 'OK') {
+        // ✅ 只保留前 5 筆最近的店家名稱
+        nearbyStores = (data['results'] as List)
+            .take(6)
+            .map((e) => e['name'].toString())
+            .toList();
+      } else {
+        print('❌ Places API 錯誤：${data['status']}');
+      }
+    } catch (e) {
+      print('❌ 載入附近店家失敗：$e');
+    }
+  }
+
+  // ✅ 若原始店家不在清單中，也要補上，避免失去原值
+  if (!nearbyStores.contains(selectedStore)) {
+    nearbyStores.insert(0, selectedStore); // 放在最上面
+  }
+
+  // ✅ 顯示 Dialog（已整合下拉式店家選單）
   showDialog(
     context: context,
     builder: (_) => AlertDialog(
@@ -208,8 +284,28 @@ void _showEditDialog(ScanRecord record) {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '商品名稱')),
-          TextField(controller: storeCtrl, decoration: const InputDecoration(labelText: '店家名稱')),
+          // ✅ 商品名稱
+          TextField(
+            controller: nameCtrl,
+            decoration: const InputDecoration(labelText: '商品名稱'),
+          ),
+
+          // ✅ 附近店家選單（Dropdown）
+          DropdownButtonFormField<String>(
+            value: selectedStore,
+            items: nearbyStores.map((storeName) {
+              return DropdownMenuItem(
+                value: storeName,
+                child: Text(storeName),
+              );
+            }).toList(),
+            onChanged: (value) {
+              if (value != null) selectedStore = value;
+            },
+            decoration: const InputDecoration(labelText: '店家名稱（附近）'),
+          ),
+
+          // ✅ 價格
           TextField(
             controller: priceCtrl,
             keyboardType: TextInputType.number,
@@ -218,42 +314,52 @@ void _showEditDialog(ScanRecord record) {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
         ElevatedButton(
           onPressed: () async {
             final newName = nameCtrl.text.trim();
-            final newStore = storeCtrl.text.trim();
             final newPrice = double.tryParse(priceCtrl.text.trim());
 
-            if (newName.isEmpty || newStore.isEmpty || newPrice == null || newPrice <= 0) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 請輸入有效資料')));
+            // ⚠️ 驗證欄位資料
+            if (newName.isEmpty || selectedStore.isEmpty || newPrice == null || newPrice <= 0) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('❌ 請輸入有效資料')),
+              );
               return;
             }
 
             Navigator.pop(context); // 關閉 Dialog
 
-            // ✅ 呼叫後端 API 更新
+            // ✅ 呼叫後端更新資料
             final res = await http.post(
               Uri.parse("https://acdb-api.onrender.com/update"),
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode({
                 "id": record.id,
                 "name": newName,
-                "store": newStore,
+                "store": selectedStore,
                 "price": newPrice,
               }),
             );
 
+            // ✅ 成功處理後更新畫面
             if (res.statusCode == 200 && jsonDecode(res.body)['status'] == 'success') {
               setState(() {
                 record.name = newName;
-                record.store = newStore;
+                record.store = selectedStore;
                 record.price = newPrice;
               });
               await _loadAndMarkStores();
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 更新成功')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('✅ 更新成功')),
+              );
             } else {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 更新失敗')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('❌ 更新失敗')),
+              );
             }
           },
           child: const Text('儲存'),
@@ -262,6 +368,7 @@ void _showEditDialog(ScanRecord record) {
     ),
   );
 }
+
 
 
   @override

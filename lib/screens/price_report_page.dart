@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../data/scan_history.dart';
 
 class PriceReportPage extends StatefulWidget {
@@ -15,9 +16,19 @@ class PriceReportPage extends StatefulWidget {
 class _PriceReportPageState extends State<PriceReportPage> {
   String? keyword;
   File? imageFile;
-  final _storeController = TextEditingController();
   final _priceController = TextEditingController();
   bool _isSaving = false;
+
+  // ✅ 新增：定位與附近店家清單
+  LatLng? _currentPosition;
+  List<String> _nearbyStores = [];
+  String? _selectedStore;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNearbyStores(); // ⬅️ 一開始就抓附近店家
+  }
 
   @override
   void didChangeDependencies() {
@@ -29,6 +40,7 @@ class _PriceReportPageState extends State<PriceReportPage> {
     }
   }
 
+  // ✅ 壓縮圖片
   Future<File> _compressImage(File file) async {
     final dir = await Directory.systemTemp.createTemp();
     final targetPath = '${dir.path}/compressed.jpg';
@@ -40,14 +52,52 @@ class _PriceReportPageState extends State<PriceReportPage> {
     return xfile != null ? File(xfile.path) : file;
   }
 
+  // ✅ 抓取目前位置與附近店家（最多 5 筆）
+  Future<void> _fetchNearbyStores() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition();
+      _currentPosition = LatLng(pos.latitude, pos.longitude);
+
+      const apiKey = 'AIzaSyD7anVSRtxnFU9XimXMfLOmrqc0mEnZxfY'; // ❗請替換成你自己的 Google Places API 金鑰
+      final url =
+          'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
+          '?location=${_currentPosition!.latitude},${_currentPosition!.longitude}'
+          '&rankby=distance'
+          '&type=store'
+          '&key=$apiKey';
+
+      final response = await http.get(Uri.parse(url));
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['status'] == 'OK') {
+        final stores = (data['results'] as List)
+            .take(6)
+            .map((e) => e['name'].toString())
+            .toList();
+
+        setState(() {
+          _nearbyStores = stores;
+          if (_nearbyStores.isNotEmpty) {
+            _selectedStore = _nearbyStores[0];
+          }
+        });
+      } else {
+        print('❌ Google Places API 錯誤：${data['status']}');
+      }
+    } catch (e) {
+      print('❌ 抓附近店家錯誤：$e');
+    }
+  }
+
+  // ✅ 儲存價格回報
   Future<void> _saveRecord() async {
-    final store = _storeController.text.trim();
+    final store = _selectedStore ?? '';
     final priceText = _priceController.text.trim();
     final price = double.tryParse(priceText);
 
     if (store.isEmpty || price == null || price <= 0 || keyword == null || imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('請輸入有效價格與店名')),
+        const SnackBar(content: Text('請輸入有效價格與選擇店家')),
       );
       return;
     }
@@ -61,7 +111,6 @@ class _PriceReportPageState extends State<PriceReportPage> {
       final base64Image = base64Encode(imageBytes);
       final captureTime = DateTime.now();
 
-      // ✅ 傳送至後端 API
       final response = await http.post(
         Uri.parse('https://acdb-api.onrender.com/upload'),
         headers: {'Content-Type': 'application/json'},
@@ -74,14 +123,13 @@ class _PriceReportPageState extends State<PriceReportPage> {
           'barcode': '',
           'userId': 'guest',
           'imageBase64': base64Image,
-          'captureTime': captureTime.toIso8601String(), // ✅ 傳送拍照時間
+          'captureTime': captureTime.toIso8601String(),
         }),
       );
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
 
-        // ✅ 儲存 API 回傳的完整資料
         final updatedRecord = ScanRecord(
           id: result['id'],
           name: keyword!,
@@ -93,37 +141,29 @@ class _PriceReportPageState extends State<PriceReportPage> {
           imagePath: compressed.path,
           timestamp: DateTime.parse(result['timestamp']),
         );
-        
-        print("✅ 後端回傳的 id：${result['id']}");
-        print("✅ updatedRecord.id：${updatedRecord.id}");
 
-        // ✅ 嘗試找出之前本地已加入但沒 id 的舊紀錄（比對時間只比到秒）
         final index = scanHistory.indexWhere((r) =>
-          r.timestamp.toIso8601String().substring(0, 19) ==
-          updatedRecord.timestamp.toIso8601String().substring(0, 19));
+            r.timestamp.toIso8601String().substring(0, 19) ==
+            updatedRecord.timestamp.toIso8601String().substring(0, 19));
 
         if (index != -1) {
-          scanHistory[index] = updatedRecord; // ✅ 替換掉舊的
+          scanHistory[index] = updatedRecord;
         } else {
-          scanHistory.add(updatedRecord); // ✅ 如果找不到就直接加入
+          scanHistory.add(updatedRecord);
         }
 
-          await saveScanHistory(); // ✅ 儲存更新後的清單
-          
-        print("✅ 最終 scanHistory 最後一筆 id：${scanHistory.last.id}");
+        await saveScanHistory();
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('✅ 已成功回報價格')),
         );
         Navigator.pop(context);
       } else {
-        print('❌ API 回應錯誤：${response.body}');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('❌ 上傳失敗：${response.body}')),
         );
       }
     } catch (e) {
-      print('❌ 儲存發生錯誤：$e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('❌ 儲存失敗，請稍後再試')),
       );
@@ -159,10 +199,22 @@ class _PriceReportPageState extends State<PriceReportPage> {
                 decoration: const InputDecoration(labelText: '輸入價格 (NT\$)'),
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: _storeController,
-                decoration: const InputDecoration(labelText: '輸入店名'),
+
+              // ✅ 改成下拉式選單顯示附近店家
+              DropdownButtonFormField<String>(
+                value: _selectedStore,
+                items: _nearbyStores.map((store) {
+                  return DropdownMenuItem(
+                    value: store,
+                    child: Text(store),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() => _selectedStore = value);
+                },
+                decoration: const InputDecoration(labelText: '選擇附近店家'),
               ),
+
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
@@ -179,6 +231,8 @@ class _PriceReportPageState extends State<PriceReportPage> {
     );
   }
 }
+
+
 
 
 
