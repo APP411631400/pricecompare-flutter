@@ -8,6 +8,8 @@ import 'compare_page.dart';
 import 'ai_page.dart';
 import 'user_page.dart';
 import 'take_photo_page.dart';
+import 'business_account_page.dart';
+
 
 import '../services/product_service.dart' as ps;
 import '../services/user_service.dart';
@@ -183,6 +185,7 @@ class _HomePageState extends State<HomePage> {
                     _sectionTitle('帳戶管理'),
                     _functionRow([
                       _functionCard(Icons.person, '會員中心', UserPage(), Colors.indigo),
+                      _functionCard(Icons.store, '商家帳號', BusinessAccountPage(), Colors.teal),
                     ]),
                   ],
                 ),

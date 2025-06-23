@@ -49,6 +49,7 @@ dependencies:
   flutter_image_compress: ^2.1.0
   dart_levenshtein: ^1.0.1
   webview_flutter: ^4.2.2
+  html: ^0.15.0
 
 
   url_launcher: ^6.2.5

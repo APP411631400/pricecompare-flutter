@@ -5,11 +5,13 @@ import 'package:http/http.dart' as http;
 import '../services/favorite_service.dart';
 import '../services/product_service.dart' as ps;
 
+
 class ComparePage extends StatefulWidget {
   final String? barcode;
   final String? keyword;
   final String? fromStore;
   final double? fromPrice;
+
 
   const ComparePage({
     Key? key,
@@ -19,21 +21,26 @@ class ComparePage extends StatefulWidget {
     this.fromPrice,
   }) : super(key: key);
 
+
   @override
   State<ComparePage> createState() => _ComparePageState();
 }
+
 
 class _ComparePageState extends State<ComparePage> {
   ps.Product? product;
   bool isFavorite = false;
   bool _isLoading = true;
   String? _aiCardRecommendation; // ✅ 儲存推薦文字
+  Map<String, double> crawledPrices = {}; // ✅ 爬蟲取得的價格
+
 
   @override
   void initState() {
     super.initState();
     _initProduct();
   }
+
 
   Future<void> _initProduct() async {
     try {
@@ -50,21 +57,39 @@ class _ComparePageState extends State<ComparePage> {
         product = list.isNotEmpty ? list.first : null;
       }
 
+
       if (product != null) {
         isFavorite = await FavoriteService.isFavorited(product!.name);
+
+
+        // ✅ 呼叫後端爬蟲 API 並取得即時價格
+        final crawlUri = Uri.parse('https://acdb-api.onrender.com/product_detail?id=${product!.id}');
+        final crawlRes = await http.get(crawlUri);
+        if (crawlRes.statusCode == 200) {
+          final data = jsonDecode(crawlRes.body);
+          crawledPrices = {
+            'momo': _parsePrice(data['momo']),
+            'pchome': _parsePrice(data['pchome']),
+            '博客來': _parsePrice(data['博客來']),
+            '屈臣氏': _parsePrice(data['屈臣氏']),
+            '康是美': _parsePrice(data['康是美']),
+          };
+        }
       }
 
-      // ✅ 根據商品價格呼叫後端推薦信用卡
+
+      // ✅ 建議信用卡推薦
       final allPrices = [
-        ...product?.prices.values ?? [],
+        ...crawledPrices.values,
         if (widget.fromPrice != null) widget.fromPrice!
       ];
       final minPrice = allPrices.isNotEmpty
           ? allPrices.where((p) => p > 0).reduce((a, b) => a < b ? a : b)
           : null;
 
+
       if (product != null && minPrice != null) {
-        final uri = Uri.parse('https://acdb-api.onrender.com/recommend_card'); // ✅ 換成你 API 的網址
+        final uri = Uri.parse('https://acdb-api.onrender.com/recommend_card');
         final response = await http.post(
           uri,
           headers: {'Content-Type': 'application/json'},
@@ -73,6 +98,7 @@ class _ComparePageState extends State<ComparePage> {
             'amount': minPrice,
           }),
         );
+
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
@@ -87,8 +113,19 @@ class _ComparePageState extends State<ComparePage> {
       _aiCardRecommendation = '推薦失敗：$e';
     }
 
+
     setState(() => _isLoading = false);
   }
+
+
+  double _parsePrice(dynamic value) {
+    if (value is String) {
+      final numStr = value.replaceAll(RegExp(r'[^0-9.]'), '');
+      return double.tryParse(numStr) ?? 0;
+    }
+    return 0;
+  }
+
 
   Future<ps.Product?> _showProductSelectionDialog(List<ps.Product> products) async {
     return await showDialog<ps.Product>(
@@ -120,6 +157,7 @@ class _ComparePageState extends State<ComparePage> {
     );
   }
 
+
   Future<void> _toggleFavorite() async {
     if (product == null) return;
     setState(() => isFavorite = !isFavorite);
@@ -130,11 +168,13 @@ class _ComparePageState extends State<ComparePage> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+
 
     if (product == null) {
       return Scaffold(
@@ -143,13 +183,15 @@ class _ComparePageState extends State<ComparePage> {
       );
     }
 
+
     final allPrices = [
-      ...product!.prices.entries.map((e) => e.value),
+      ...crawledPrices.values,
       if (widget.fromPrice != null) widget.fromPrice!,
     ];
     final double? minPrice = allPrices.isNotEmpty
         ? allPrices.where((p) => p > 0).reduce((a, b) => a < b ? a : b)
         : null;
+
 
     return Scaffold(
       appBar: AppBar(
@@ -183,6 +225,7 @@ class _ComparePageState extends State<ComparePage> {
             const Text('📊 比價清單', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
 
+
             if (widget.fromStore != null && widget.fromPrice != null)
               Card(
                 color: Colors.yellow[100],
@@ -213,12 +256,14 @@ class _ComparePageState extends State<ComparePage> {
                 ),
               ),
 
+
             Column(
-              children: product!.prices.entries.map((entry) {
+              children: crawledPrices.entries.map((entry) {
                 final platform = entry.key;
                 final price = entry.value;
                 final url = product!.links[platform];
                 final isLowest = (minPrice != null && price == minPrice);
+
 
                 return Card(
                   child: ListTile(
@@ -269,6 +314,7 @@ class _ComparePageState extends State<ComparePage> {
               }).toList(),
             ),
 
+
             const SizedBox(height: 24),
             const Text('💳 建議信用卡', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -282,6 +328,7 @@ class _ComparePageState extends State<ComparePage> {
                   )
                 : const Center(child: CircularProgressIndicator()),
 
+
             const SizedBox(height: 20),
           ],
         ),
@@ -289,6 +336,8 @@ class _ComparePageState extends State<ComparePage> {
     );
   }
 }
+
+
 
 
 
