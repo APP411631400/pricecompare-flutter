@@ -1,39 +1,36 @@
 // ✅ ai_page.dart - AI 智慧推薦頁面
 import 'package:flutter/material.dart';
-import '../data/fake_data.dart';
+// import '../data/fake_data.dart';
 import 'compare_page.dart';
 
 class AIPredictPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    // ✅ 模擬推薦的商品清單（直接拿假資料）
-    // TODO: 改為從後端 API 取得推薦商品清單
-    final recommended = fakeProducts;
-
     return Scaffold(
       appBar: AppBar(title: Text('AI 智慧推薦')),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: recommended.length,
-        itemBuilder: (context, index) {
-          final product = recommended[index];
-          return Card(
-            elevation: 2,
-            margin: const EdgeInsets.only(bottom: 16),
-            child: ListTile(
-              leading: Icon(Icons.lightbulb, color: Colors.teal),
-              title: Text(product.name),
-              subtitle: Text('最低價：\$${product.prices.map((p) => p.price).reduce((a, b) => a < b ? a : b)}'),
-              trailing: Icon(Icons.arrow_forward_ios),
-              onTap: () {
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'AI 推薦區塊（預留模型/後端）',
+              style: TextStyle(fontSize: 18, color: Colors.grey),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                // 🔜 TODO: 未來這裡會根據 AI 推薦結果的條碼跳轉
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => ComparePage(barcode: product.barcode)),
+                  MaterialPageRoute(
+                    builder: (_) => ComparePage(barcode: '12345678'), // 先放假的 barcode
+                  ),
                 );
               },
+              child: Text('查看推薦結果'),
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }

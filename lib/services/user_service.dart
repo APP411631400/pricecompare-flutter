@@ -109,6 +109,13 @@ class UserService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_userIdKey);
   }
+
+  /// ✅ 取得目前使用者的 ID，未登入則回傳 'guest'（方便比對紀錄用）
+  static Future<String> getCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt(_userIdKey);
+    return userId?.toString() ?? 'guest'; // 若沒登入，回傳 guest
+  }
 }
 
 

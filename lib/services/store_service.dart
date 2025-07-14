@@ -127,6 +127,7 @@ class StoreService {
             longitude: double.tryParse(parts[1]) ?? 0,
             store: row['位置描述'] ?? '未知店家',
             imagePath: null, // 圖片尚未還原
+            userId: row['使用者ID'] ?? 'guest', // ✅ 加這行：記錄是哪位使用者上傳的
           ));
         }
       } else {

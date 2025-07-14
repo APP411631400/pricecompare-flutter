@@ -9,6 +9,7 @@ import '../utils/cost_calculator.dart';
 import '../data/scan_history.dart';
 import '../services/store_service.dart';
 import 'compare_page.dart';
+import '../services/user_service.dart'; // 依照你的路徑調整
 
 class MapComparePage extends StatefulWidget {
   const MapComparePage({super.key});
@@ -206,17 +207,31 @@ class _MapComparePageState extends State<MapComparePage> {
         child: const Text('查看比價'),
       ),
 
-      // ✅ 刪除紀錄
-      TextButton(
-        onPressed: () async {
-          await StoreService().deleteScanRecordFromDatabase(record);
-          scanHistory.removeWhere((r) => r.id == record.id);
-          await saveScanHistory();
-          Navigator.pop(context);
-          await _loadAndMarkStores();
-        },
-        child: const Text('刪除', style: TextStyle(color: Colors.red)),
-      ),
+      FutureBuilder<String?>(
+          future: UserService.getCurrentUserId(), // ✅ 取得目前登入者的真正 ID
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const SizedBox.shrink();
+
+            final currentUserId = snapshot.data ?? 'guest'; // ⚠️ 改為你實際用的 guest id
+            final recordUserId = record.userId ?? '';
+
+            final isOwner = currentUserId == recordUserId;
+
+            if (!isOwner) return const SizedBox.shrink();
+
+            return TextButton(
+              onPressed: () async {
+                await StoreService().deleteScanRecordFromDatabase(record);
+                scanHistory.removeWhere((r) => r.id == record.id);
+                await saveScanHistory();
+                Navigator.pop(context);
+                await _loadAndMarkStores();
+              },
+              child: const Text('刪除', style: TextStyle(color: Colors.red)),
+            );
+          },
+        ),
+
 
       // ✅ 關閉
       TextButton(
@@ -284,7 +299,7 @@ void _showEditDialog(ScanRecord record) async {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ✅ 商品名稱
+          // ✅ 商品名稱輸入框
           TextField(
             controller: nameCtrl,
             decoration: const InputDecoration(labelText: '商品名稱'),
@@ -305,7 +320,7 @@ void _showEditDialog(ScanRecord record) async {
             decoration: const InputDecoration(labelText: '店家名稱（附近）'),
           ),
 
-          // ✅ 價格
+          // ✅ 價格輸入框
           TextField(
             controller: priceCtrl,
             keyboardType: TextInputType.number,
@@ -323,10 +338,33 @@ void _showEditDialog(ScanRecord record) async {
             final newName = nameCtrl.text.trim();
             final newPrice = double.tryParse(priceCtrl.text.trim());
 
-            // ⚠️ 驗證欄位資料
-            if (newName.isEmpty || selectedStore.isEmpty || newPrice == null || newPrice <= 0) {
+            // ✅ 加強驗證商品名稱（至少兩字、只含中英文與數字）
+            final nameValid = newName.length >= 2 &&
+                RegExp(r'^[\u4e00-\u9fa5a-zA-Z0-9\s]+$').hasMatch(newName);
+
+            // ✅ 驗證價格合理範圍（10~99999）
+            final priceValid = newPrice != null && newPrice > 10 && newPrice < 99999;
+
+            // ✅ 驗證店家是否選擇
+            final storeValid = selectedStore.isNotEmpty;
+
+            if (!nameValid) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('❌ 請輸入有效資料')),
+                const SnackBar(content: Text('❌ 商品名稱請輸入正確（至少兩字，僅限中英文與數字）')),
+              );
+              return;
+            }
+
+            if (!priceValid) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('❌ 價格請輸入合理數值（10～99999）')),
+              );
+              return;
+            }
+
+            if (!storeValid) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('❌ 請選擇店家')),
               );
               return;
             }

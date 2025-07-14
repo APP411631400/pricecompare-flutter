@@ -25,7 +25,7 @@ class Product {
     final Map<String, String> images = {};
 
     // ✅ 支援的比價平台（需與後端欄位一致）
-    final List<String> platforms = ['momo', 'pchome', '博客來', '屈臣氏', '康是美'];
+    final List<String> platforms = ['燦坤', 'PChome', 'momo', '全國電子'];
 
     for (final platform in platforms) {
       final priceKey = '${platform}_價格';
@@ -60,7 +60,7 @@ class ProductService {
 
   /// 📦 取得所有比價商品（完整商品清單）
   static Future<List<Product>> fetchAll() async {
-    final response = await http.get(Uri.parse('$baseUrl/products'));
+    final response = await http.get(Uri.parse('$baseUrl/appliances/products'));
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
       return data.map((item) => Product.fromJson(item)).toList();
@@ -71,7 +71,7 @@ class ProductService {
 
   /// 🔍 模糊搜尋比價商品（關鍵字查詢）
   static Future<List<Product>> search(String keyword) async {
-    final response = await http.get(Uri.parse('$baseUrl/products/search?query=$keyword'));
+    final response = await http.get(Uri.parse('$baseUrl/appliances/products/search?query=$keyword'));
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
       return data.map((item) => Product.fromJson(item)).toList();

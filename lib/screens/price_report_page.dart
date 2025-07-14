@@ -7,6 +7,8 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../data/scan_history.dart';
+import 'package:price_compare_app/services/user_service.dart';
+
 
 class PriceReportPage extends StatefulWidget {
   @override
@@ -94,6 +96,7 @@ class _PriceReportPageState extends State<PriceReportPage> {
     final store = _selectedStore ?? '';
     final priceText = _priceController.text.trim();
     final price = double.tryParse(priceText);
+    
 
     if (store.isEmpty || price == null || price <= 0 || keyword == null || imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -110,6 +113,8 @@ class _PriceReportPageState extends State<PriceReportPage> {
       final imageBytes = await compressed.readAsBytes();
       final base64Image = base64Encode(imageBytes);
       final captureTime = DateTime.now();
+      final userId = await UserService.getCurrentUserId();
+
 
       final response = await http.post(
         Uri.parse('https://acdb-api.onrender.com/upload'),
@@ -121,7 +126,7 @@ class _PriceReportPageState extends State<PriceReportPage> {
           'longitude': position.longitude,
           'store': store,
           'barcode': '',
-          'userId': 'guest',
+          'userId': userId,
           'imageBase64': base64Image,
           'captureTime': captureTime.toIso8601String(),
         }),
@@ -140,6 +145,7 @@ class _PriceReportPageState extends State<PriceReportPage> {
           store: store,
           imagePath: compressed.path,
           timestamp: DateTime.parse(result['timestamp']),
+          userId: userId,
         );
 
         final index = scanHistory.indexWhere((r) =>

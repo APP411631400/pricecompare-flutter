@@ -12,6 +12,7 @@ class ScanRecord {
   double? price;               // 使用者輸入的價格（可為 null）
   String? store;               // 使用者輸入的店名（可為 null）
   String? imagePath;           // 圖片檔案的本機路徑（可為 null）
+  String? userId;
 
   /// ✅ 建構函式
   ScanRecord({
@@ -24,6 +25,7 @@ class ScanRecord {
     this.price,
     this.store,
     this.imagePath,
+    this.userId,
   });
 
   /// ✅ 將資料轉為 JSON 格式（儲存至 SharedPreferences 或送給後端）
@@ -37,6 +39,7 @@ class ScanRecord {
         'price': price,
         'store': store,
         'imagePath': imagePath,
+        'userId': userId,
       };
 
   /// ✅ 從 JSON 建立一筆 ScanRecord（例如從 SharedPreferences 載入）
@@ -50,6 +53,7 @@ class ScanRecord {
         price: json['price'] != null ? (json['price'] as num).toDouble() : null,
         store: json['store'],
         imagePath: json['imagePath'],
+        userId: json['userId'],
       );
 }
 

@@ -5,7 +5,7 @@ import 'map_compare_page.dart';
 import 'recommend_page.dart';
 import 'credit_card_page.dart';
 import 'compare_page.dart';
-import 'ai_page.dart';
+//import 'ai_page.dart';
 import 'user_page.dart';
 import 'take_photo_page.dart';
 import 'business_account_page.dart';
@@ -144,9 +144,10 @@ class _HomePageState extends State<HomePage> {
                                   ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover)
                                   : Icon(Icons.image_not_supported),
                               title: Text(product.name),
-                              subtitle: lowest != null
-                                  ? Text("最低價：\$${lowest.value.toStringAsFixed(0)}（${lowest.key}）")
-                                  : Text("點我查看比價"),
+                              subtitle: Text("點我查看比價"),
+                              // subtitle: lowest != null
+                                  // ? Text("最低價：\$${lowest.value.toStringAsFixed(0)}（${lowest.key}）")
+                                  // : Text("點我查看比價"),
                               trailing: Icon(Icons.chevron_right),
                               onTap: () => Navigator.push(
                                 context,
@@ -178,7 +179,7 @@ class _HomePageState extends State<HomePage> {
                     _sectionTitle('推薦與優惠'),
                     _functionRow([
                       _functionCard(Icons.recommend, '推薦商品', RecommendPage(), Colors.purple),
-                      _functionCard(Icons.auto_awesome, 'AI 智慧推薦', AIPredictPage(), Colors.teal),
+                     // _functionCard(Icons.auto_awesome, 'AI 智慧推薦', AIPredictPage(), Colors.teal),
                       _functionCard(Icons.credit_card, '信用卡優惠', CreditCardPage(), Colors.redAccent),
                     ]),
                     const SizedBox(height: 16),
