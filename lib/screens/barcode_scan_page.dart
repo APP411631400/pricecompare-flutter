@@ -1,8 +1,10 @@
-// ✅ barcode_scan_page.dart - 條碼掃描頁面
+// ✅ barcode_scan_page.dart - 改成掃碼後查詢商品名稱再跳轉
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart'; // 📷 相機條碼掃描套件
-import 'compare_page.dart'; // 📄 掃描完後導向比價頁面
-import '../data/scan_history.dart'; // 📦 掃描紀錄資料來源
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'compare_page.dart';
+import '../data/scan_history.dart';
 
 class BarcodeScanPage extends StatefulWidget {
   @override
@@ -10,11 +12,31 @@ class BarcodeScanPage extends StatefulWidget {
 }
 
 class _BarcodeScanPageState extends State<BarcodeScanPage> {
-  // ✅ 控制相機掃描功能
   final MobileScannerController scannerController = MobileScannerController();
-
-  // ✅ 用來儲存是否已經掃到條碼（避免重複觸發）
   String? scannedCode;
+  bool isLoading = false;
+
+  /// ✅ 根據條碼查詢商品名稱（使用 EANData API）
+  Future<String?> fetchProductName(String barcode) async {
+    final url =
+        'https://eandata.com/feed/?v=3&keycode=C42EED7D6885C949&mode=json&find=$barcode&user=your_account';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        final product = data['product'];
+        final name = product?['attributes']?['product'];
+        if (name != null && name.toString().trim().isNotEmpty) {
+          return name.toString();
+        }
+      }
+    } catch (e) {
+      print('❌ 查詢商品名稱失敗: $e');
+    }
+    return null; // 沒找到或錯誤
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,27 +44,51 @@ class _BarcodeScanPageState extends State<BarcodeScanPage> {
       appBar: AppBar(title: const Text('掃描條碼')),
       body: Column(
         children: [
-          // ✅ 條碼掃描區（上方占 4/5 空間）
+          // ✅ 條碼掃描區
           Expanded(
             flex: 4,
             child: MobileScanner(
               controller: scannerController,
-              onDetect: (capture) {
+              onDetect: (capture) async {
                 final List<Barcode> barcodes = capture.barcodes;
                 for (final barcode in barcodes) {
                   final code = barcode.rawValue;
 
-                  if (code != null && scannedCode == null) {
-                    // ✅ 第一次掃描到條碼才執行
+                  if (code != null && scannedCode == null && !isLoading) {
                     setState(() {
                       scannedCode = code;
+                      isLoading = true;
                     });
 
-                    // ✅ 新增掃描紀錄，只存條碼與時間，其餘留空
+                    scannerController.stop();
+
+                    // ✅ 查詢商品名稱
+                    final name = await fetchProductName(code);
+
+                    // ✅ 顯示對話框再跳轉
+                    if (context.mounted) {
+                      await showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('商品資訊'),
+                          content: Text(name != null
+                              ? '商品名稱：$name'
+                              : '查無商品名稱，將繼續比價'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('確定'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    // ✅ 加入掃描紀錄
                     scanHistory.add(
                       ScanRecord(
                         barcode: code,
-                        name: '', // 掃碼無名稱，留空
+                        name: name ?? '',
                         timestamp: DateTime.now(),
                         latitude: null,
                         longitude: null,
@@ -52,39 +98,44 @@ class _BarcodeScanPageState extends State<BarcodeScanPage> {
                       ),
                     );
 
-                    // ✅ 停止掃描（避免重複進入）
-                    scannerController.stop();
+                    // ✅ 導向比價頁面
+                    if (context.mounted) {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ComparePage(
+                            barcode: code,
+                            keyword: name,
+                          ),
+                        ),
+                      );
+                    }
 
-                    // ✅ 跳轉比價頁面（傳入掃描到的條碼）
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ComparePage(barcode: code),
-                      ),
-                    );
-
-                    break; // ✅ 掃到就跳出 loop
+                    break;
                   }
                 }
               },
             ),
           ),
 
-          // ✅ 下方顯示掃描狀態提示（占 1/5 空間）
+          // ✅ 掃描提示
           Expanded(
             flex: 1,
             child: Center(
-              child: Text(
-                scannedCode == null ? '掃描中...' : '掃描完成，準備跳轉...',
-                style: const TextStyle(fontSize: 16),
-              ),
+              child: isLoading
+                  ? const CircularProgressIndicator()
+                  : Text(
+                      scannedCode == null ? '掃描中...' : '取得資訊中...',
+                      style: const TextStyle(fontSize: 16),
+                    ),
             ),
-          )
+          ),
         ],
       ),
     );
   }
 }
+
 
 
 
