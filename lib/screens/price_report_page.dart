@@ -9,6 +9,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../data/scan_history.dart';
 import 'package:price_compare_app/services/user_service.dart';
 
+import '../services/local_account_store.dart';
+
 
 class PriceReportPage extends StatefulWidget {
   @override
@@ -147,6 +149,20 @@ class _PriceReportPageState extends State<PriceReportPage> {
           timestamp: DateTime.parse(result['timestamp']),
           userId: userId,
         );
+
+
+
+        await LocalAccountStore.addPriceReport(
+          productName: keyword!,
+          storeName: store,
+          price: price,
+          lat: position.latitude,
+          lng: position.longitude,
+          photoUrl: compressed.path,
+        );
+
+
+
 
         final index = scanHistory.indexWhere((r) =>
             r.timestamp.toIso8601String().substring(0, 19) ==

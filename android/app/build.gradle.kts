@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("com.google.gms.google-services")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -24,7 +25,8 @@ android {
         applicationId = "com.example.price_compare_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // minSdk = flutter.minSdkVersion
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -41,4 +43,14 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // 使用 BoM 管版本
+    implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+    // 加入要用的 Firebase 產品（至少 Auth 才能 Google 登入）
+    implementation("com.google.firebase:firebase-auth")
+    // 需要 Firestore / Storage 再加：
+    // implementation("com.google.firebase:firebase-firestore")
+    // implementation("com.google.firebase:firebase-storage")
 }

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import '../services/local_account_store.dart';
+import 'saved_cards_page.dart';
+
 /// 📌 資料模型：代表一張信用卡
 class CreditCard {
   final int id;         // ✅ 信用卡的唯一識別編號
@@ -127,11 +130,48 @@ class _CreditCardFilterPageState extends State<CreditCardFilterPage> {
                   final card = filteredCards[index];
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8),
-                    child: ListTile(
+                    /*child: ListTile(
                       leading: Icon(Icons.credit_card),       // ✅ 信用卡圖示
                       title: Text(card.name),                 // ✅ 卡名
                       subtitle: Text('${card.bank}\n${card.promo}'), // ✅ 銀行 + 一般優惠
                     ),
+                    */
+
+
+                    child: ListTile(
+                      leading: const Icon(Icons.credit_card),
+                      title: Text(card.name),
+                      subtitle: Text('${card.bank}\n${card.promo}'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.add),
+                        tooltip: '加入到我的信用卡',
+                        onPressed: () async {
+                          await LocalAccountStore.addSavedCard(
+                            card.id,         // ← 你的卡片唯一ID
+                            nickname: card.name,     // ← 先用卡名當暱稱
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('已將「${card.name}」加入已儲存的信用卡'),
+                              action: SnackBarAction(
+                                label: '查看',
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const SavedCardsPage()),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+
+
+
                   );
                 },
               ),

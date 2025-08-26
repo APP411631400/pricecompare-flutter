@@ -5,16 +5,23 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/favorite_service.dart';
 import '../services/product_service.dart' as ps;
-import 'ai_page.dart'; // ✅ 加入 AI 分析頁面
+import 'ai_page.dart';
 
-/// 比價頁面：顯示實體店與各大電商比價結果，並推薦最佳信用卡
+import 'scan_history_page.dart' show HistoryRepo;
+
 class ComparePage extends StatefulWidget {
   final String? barcode;
   final String? keyword;
   final String? fromStore;
   final double? fromPrice;
 
-  const ComparePage({Key? key, this.barcode, this.keyword, this.fromStore, this.fromPrice}) : super(key: key);
+  const ComparePage({
+    Key? key,
+    this.barcode,
+    this.keyword,
+    this.fromStore,
+    this.fromPrice,
+  }) : super(key: key);
 
   @override
   State<ComparePage> createState() => _ComparePageState();
@@ -30,9 +37,7 @@ class _ComparePageState extends State<ComparePage> {
 
   String? _aiCardRecommendation;
   Map<String, double> crawledPrices = {};
-  // final List<String> _platforms = ['momo', 'pchome', '博客來', '屈臣氏', '康是美'];
   final List<String> _platforms = ['燦坤', 'PChome', 'momo', '全國電子'];
-
 
   @override
   void initState() {
@@ -53,8 +58,23 @@ class _ComparePageState extends State<ComparePage> {
         final list = await ps.ProductService.search(widget.barcode!);
         product = list.isNotEmpty ? list.first : null;
       }
+      
       if (product != null) {
         isFavorite = await FavoriteService.isFavorited(product!.name);
+
+        if (product != null) {
+            final historyKey = product!.name.trim(); // 不用條碼，一律用名稱
+            await HistoryRepo.addView(
+              productId: historyKey,
+              productName: product!.name,
+              extra: {
+                'from': 'compare',
+                'query': widget.keyword ?? widget.barcode ?? '',
+                if (widget.fromStore != null) 'fromStore': widget.fromStore,
+                if (widget.fromPrice != null) 'fromPrice': widget.fromPrice,
+              },
+            );
+          }
       }
     } catch (e) {
       product = null;
@@ -62,6 +82,8 @@ class _ComparePageState extends State<ComparePage> {
     setState(() => _loadingProduct = false);
     _fetchPricesAndRecommend();
   }
+
+  
 
 /*
   Future<void> _fetchPricesAndRecommend() async {
@@ -104,9 +126,10 @@ class _ComparePageState extends State<ComparePage> {
     try {
       if (product == null) return;
 
-      // ✅ 新的資料 API：用模糊搜尋找對應商品資料（使用你的 Flask API）
+      // ✅ 以你的 API 抓比價資料
       final crawlUri = Uri.parse(
-          'https://acdb-api.onrender.com/appliances/products/search?query=${Uri.encodeComponent(product!.name)}');
+        'https://acdb-api.onrender.com/appliances/products/search?query=${Uri.encodeComponent(product!.name)}',
+      );
       final crawlRes = await http.get(crawlUri);
 
       if (crawlRes.statusCode == 200) {
@@ -114,7 +137,6 @@ class _ComparePageState extends State<ComparePage> {
         if (resultList.isNotEmpty) {
           final data = resultList.first;
 
-          // ✅ 將價格資料轉成 crawledPrices Map，方便後面顯示卡片
           crawledPrices = {
             '燦坤': _parsePrice(data['燦坤_價格']),
             'PChome': _parsePrice(data['PChome_價格']),
@@ -122,7 +144,6 @@ class _ComparePageState extends State<ComparePage> {
             '全國電子': _parsePrice(data['全國電子_價格']),
           };
 
-          // ✅ 圖片連結與商店連結也一併處理（賦值給 product 以便 ListTile 顯示）
           product!.images['燦坤'] = data['燦坤_圖片'] ?? '';
           product!.images['PChome'] = data['PChome_圖片'] ?? '';
           product!.images['momo'] = data['momo_圖片'] ?? '';
@@ -135,19 +156,12 @@ class _ComparePageState extends State<ComparePage> {
         }
       }
 
-      // ✅ 取得所有有效價格（不為 0）
-      final List<double> allPrices =
-          crawledPrices.values.where((v) => v > 0).toList();
-      if (widget.fromPrice != null) {
-        allPrices.add(widget.fromPrice!);
-      }
-
-      // ✅ 計算最低價，用於後續標示與推薦信用卡使用
-      final double? minPrice =
-          allPrices.isNotEmpty ? allPrices.reduce((a, b) => a < b ? a : b) : null;
+      // 計算最低價
+      final List<double> allPrices = crawledPrices.values.where((v) => v > 0).toList();
+      if (widget.fromPrice != null) allPrices.add(widget.fromPrice!);
+      final double? minPrice = allPrices.isNotEmpty ? allPrices.reduce((a, b) => a < b ? a : b) : null;
 
       if (minPrice != null) {
-        // ✅ 呼叫推薦信用卡 API（此段邏輯不變）
         final resp = await http.post(
           Uri.parse('https://acdb-api.onrender.com/recommend_card'),
           headers: {'Content-Type': 'application/json'},
@@ -165,7 +179,6 @@ class _ComparePageState extends State<ComparePage> {
       setState(() => _loadingPrices = false);
     }
   }
-
 
   double _parsePrice(dynamic value) {
     if (value is String) {
@@ -196,7 +209,9 @@ class _ComparePageState extends State<ComparePage> {
             },
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('取消'))],
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('取消')),
+        ],
       ),
     );
   }
@@ -211,6 +226,9 @@ class _ComparePageState extends State<ComparePage> {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // UI（僅改樣式與排版，不動你原本邏輯）
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     if (_loadingProduct) {
@@ -223,10 +241,9 @@ class _ComparePageState extends State<ComparePage> {
       );
     }
 
+    final theme = Theme.of(context);
     final List<double> allPrices = crawledPrices.values.where((v) => v > 0).toList();
-    if (widget.fromPrice != null) {
-      allPrices.add(widget.fromPrice!);
-    }
+    if (widget.fromPrice != null) allPrices.add(widget.fromPrice!);
     final double? minPrice = allPrices.isNotEmpty ? allPrices.reduce((a, b) => a < b ? a : b) : null;
 
     return Scaffold(
@@ -234,131 +251,427 @@ class _ComparePageState extends State<ComparePage> {
         title: const Text('比價結果'),
         actions: [
           IconButton(
-            icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Colors.pink : Colors.grey),
+            icon: Icon(
+              isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: isFavorite ? Colors.pink : Colors.grey,
+            ),
             onPressed: _toggleFavorite,
             tooltip: isFavorite ? '移除收藏' : '加入收藏',
           )
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-          // ⬇️ 商品區塊 + AI 分析按鈕
-          Center(child: Column(children: [
-            const Icon(Icons.shopping_cart, size: 80),
-            const SizedBox(height: 8),
-            Text(product!.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () {
-                // ✅ 點擊跳轉到 AI 分析頁
-                Navigator.push(context, MaterialPageRoute(builder: (_) => AIPredictPage()));
-              },
-              icon: const Icon(Icons.smart_toy),
-              label: const Text("AI 分析商品"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ])),
-
-          const SizedBox(height: 24),
-          const Text('📊 比價清單', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 12),
-
-          // ⬇️ 實體店價格卡片
-          if (widget.fromStore != null && widget.fromPrice != null)
-            Card(
-              color: Colors.yellow[100],
-              child: ListTile(
-                leading: const Icon(Icons.store),
-                title: Row(children: [
-                  Text(widget.fromStore!),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: (minPrice != null && widget.fromPrice == minPrice) ? Colors.redAccent : Colors.teal,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text((minPrice != null && widget.fromPrice == minPrice) ? '🔥 最低' : '現場價格',
-                        style: const TextStyle(color: Colors.white, fontSize: 12)),
-                  )
-                ]),
-                subtitle: Text('價格：\$${widget.fromPrice!.toStringAsFixed(0)}'),
-              ),
-            ),
-
-          // ⬇️ 電商價格卡片清單
-          Column(
-            children: _platforms.map((platform) {
-              final price = crawledPrices[platform] ?? 0;
-              final url = product!.links[platform] ?? '';
-              final img = product!.images[platform] ?? '';
-              final isLowest = !_loadingPrices && minPrice != null && price == minPrice;
-              return Card(
-                child: ListTile(
-                  leading: img.isNotEmpty
-                      ? Image.network(img, width: 50, height: 50, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image))
-                      : const Icon(Icons.image_not_supported),
-                  title: Row(children: [
-                    Text(platform),
-                    if (isLowest)
-                      Container(
-                        margin: const EdgeInsets.only(left: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(12)),
-                        child: const Text('🔥 最低', style: TextStyle(color: Colors.white, fontSize: 12)),
-                      )
-                  ]),
-                  subtitle: _loadingPrices
-                      ? const Text('讀取中…')
-                      : (price > 0 ? Text('價格：\$${price.toStringAsFixed(0)}') : const Text('無價格資料')),
-                  trailing: (url.isNotEmpty && price > 0)
-                      ? IconButton(
-                          icon: const Icon(Icons.open_in_new),
-                          onPressed: () async {
-                            final uri = Uri.parse(url);
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 無法開啟連結')));
-                            }
-                          },
-                        )
-                      : null,
+      backgroundColor: Colors.white,
+      body: LayoutBuilder(
+        builder: (context, c) {
+          final isWide = c.maxWidth >= 880; // 寬螢幕雙欄
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 頂部：商品標題 + AI 提示膠囊
+                Center(
+                  child: Column(
+                    children: [
+                      Text(
+                        product!.name,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _aiHeaderCapsule(context),
+                    ],
+                  ),
                 ),
-              );
-            }).toList(),
-          ),
 
-          const SizedBox(height: 24),
-          const Text('💳 建議信用卡', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 8),
-          Card(
-            color: Colors.blue[50],
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(_loadingPrices ? '信用卡推薦讀取中…' : (_aiCardRecommendation ?? '無推薦資訊')),
+                const SizedBox(height: 24),
+
+                // 中段：左 清單 / 右 地圖（or 占位）
+                isWide
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 左側：清單卡們
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _sectionTitle('比價清單'),
+                                const SizedBox(height: 12),
+                                if (widget.fromStore != null && widget.fromPrice != null)
+                                  _pricePill(
+                                    label: widget.fromStore!,
+                                    price: widget.fromPrice!,
+                                    highlight: minPrice != null && widget.fromPrice == minPrice,
+                                    icon: Icons.store,
+                                    onTap: null,
+                                  ),
+                                ..._platforms.map((platform) {
+                                  final price = crawledPrices[platform] ?? 0;
+                                  final url = product!.links[platform] ?? '';
+                                  final img = product!.images[platform] ?? '';
+                                  final isLowest = !_loadingPrices && minPrice != null && price == minPrice;
+                                  return _platformPill(
+                                    platform: platform,
+                                    imageUrl: img,
+                                    price: price,
+                                    isLowest: isLowest,
+                                    loading: _loadingPrices,
+                                    onTap: (url.isNotEmpty && price > 0)
+                                        ? () async {
+                                            final uri = Uri.parse(url);
+                                            if (await canLaunchUrl(uri)) {
+                                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                            } else {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('❌ 無法開啟連結')),
+                                              );
+                                            }
+                                          }
+                                        : null,
+                                  );
+                                }),
+                                const SizedBox(height: 20),
+                                _sectionTitle('建議信用卡'),
+                                const SizedBox(height: 8),
+                                _creditCardCapsule(_loadingPrices, _aiCardRecommendation),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(width: 18),
+
+                          // 右側：地圖 / 占位圖
+                          Expanded(
+                            child: _mapCardPlaceholder(),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _sectionTitle('比價清單'),
+                          const SizedBox(height: 12),
+                          if (widget.fromStore != null && widget.fromPrice != null)
+                            _pricePill(
+                              label: widget.fromStore!,
+                              price: widget.fromPrice!,
+                              highlight: minPrice != null && widget.fromPrice == minPrice,
+                              icon: Icons.store,
+                              onTap: null,
+                            ),
+                          ..._platforms.map((platform) {
+                            final price = crawledPrices[platform] ?? 0;
+                            final url = product!.links[platform] ?? '';
+                            final img = product!.images[platform] ?? '';
+                            final isLowest = !_loadingPrices && minPrice != null && price == minPrice;
+                            return _platformPill(
+                              platform: platform,
+                              imageUrl: img,
+                              price: price,
+                              isLowest: isLowest,
+                              loading: _loadingPrices,
+                              onTap: (url.isNotEmpty && price > 0)
+                                  ? () async {
+                                      final uri = Uri.parse(url);
+                                      if (await canLaunchUrl(uri)) {
+                                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('❌ 無法開啟連結')),
+                                        );
+                                      }
+                                    }
+                                  : null,
+                            );
+                          }),
+                          const SizedBox(height: 20),
+                          _sectionTitle('建議信用卡'),
+                          const SizedBox(height: 8),
+                          _creditCardCapsule(_loadingPrices, _aiCardRecommendation),
+                          const SizedBox(height: 16),
+                          _mapCardPlaceholder(),
+                        ],
+                      ),
+
+                const SizedBox(height: 28),
+
+                // 歷史價格（占位）
+                _sectionTitle('歷史價格'),
+                const SizedBox(height: 10),
+                _historyCardPlaceholder(minPrice: minPrice),
+
+                const SizedBox(height: 28),
+
+                // 規格表占位
+                _sectionTitle('詳細規格'),
+                const SizedBox(height: 8),
+                _specTablePlaceholder(),
+
+                const SizedBox(height: 24),
+              ],
             ),
-          ),
-
-          const SizedBox(height: 24),
-          const Text('📐 商品規格比較（預留）', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Card(
-            color: Colors.grey[200],
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text('這裡將來可放商品規格比較資訊，例如：重量、成分、規格、容量…等'),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-        ]),
+          );
+        },
       ),
+    );
+  }
+
+  // ────────────────────────── UI 小元件 ──────────────────────────
+
+  Widget _sectionTitle(String text) {
+    return Text(
+      text,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    );
+  }
+
+  // 上方「AI 提示 + 分析按鈕」膠囊
+  Widget _aiHeaderCapsule(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 820),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3E4E6),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4))],
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text('AI 依使用者偏好描述規格', style: TextStyle(color: Colors.black87)),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => AIPredictPage()));
+            },
+            icon: const Icon(Icons.smart_toy),
+            label: const Text('AI 分析'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xff8dd8f2),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 實體店/一般價格膠囊
+  Widget _pricePill({
+    required String label,
+    required double price,
+    required bool highlight,
+    IconData? icon,
+    VoidCallback? onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x22000000)),
+        boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 6, offset: Offset(0, 3))],
+      ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, color: Colors.black54),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+          ),
+          if (highlight)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(12)),
+              child: const Text('🔥 最低', style: TextStyle(color: Colors.white, fontSize: 12)),
+            ),
+          Text('\$${price.toStringAsFixed(0)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          if (onTap != null)
+            IconButton(
+              icon: const Icon(Icons.open_in_new),
+              onPressed: onTap,
+              tooltip: '前往賣場',
+            ),
+        ],
+      ),
+    );
+  }
+
+  // 電商膠囊（含圖片）
+  Widget _platformPill({
+    required String platform,
+    required String imageUrl,
+    required double price,
+    required bool isLowest,
+    required bool loading,
+    VoidCallback? onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x22000000)),
+        boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 6, offset: Offset(0, 3))],
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: imageUrl.isNotEmpty
+                ? Image.network(
+                    imageUrl,
+                    width: 54,
+                    height: 54,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 28),
+                  )
+                : const Icon(Icons.image_not_supported, size: 28),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
+              children: [
+                Text(platform, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                if (isLowest)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(12)),
+                    child: const Text('🔥 最低', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  ),
+              ],
+            ),
+          ),
+          if (loading)
+            const Text('讀取中…')
+          else
+            Text(
+              price > 0 ? '\$${price.toStringAsFixed(0)}' : '無價格資料',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          if (onTap != null)
+            IconButton(
+              icon: const Icon(Icons.open_in_new),
+              onPressed: onTap,
+              tooltip: '前往賣場',
+            ),
+        ],
+      ),
+    );
+  }
+
+  // 信用卡推薦膠囊
+  Widget _creditCardCapsule(bool loading, String? text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F6FD),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x22000000)),
+      ),
+      child: Text(
+        loading ? '信用卡推薦讀取中…' : (text ?? '無推薦資訊'),
+        style: const TextStyle(fontSize: 14),
+      ),
+    );
+  }
+
+  // 右側地圖占位卡
+  Widget _mapCardPlaceholder() {
+    return Container(
+      height: 240,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0x22000000)),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 6, offset: Offset(0, 3))],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 這裡放靜態占位圖（或將來接地圖）
+            Container(color: const Color(0xFFEFF4F7)),
+            const Center(
+              child: Icon(Icons.map, size: 80, color: Colors.black26),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 歷史價格占位卡（含最低/最高字樣）
+  Widget _historyCardPlaceholder({double? minPrice}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0x22000000)),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 6, offset: Offset(0, 3))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 折線圖占位
+          Container(
+            height: 140,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F7F7),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(child: Text('（未接圖表）歷史價格折線圖占位')),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _priceStat(label: '歷史最低', value: minPrice != null ? ' \$ ${minPrice.toStringAsFixed(0)}' : '—', color: Colors.green),
+              const SizedBox(width: 20),
+              _priceStat(label: '歷史最高', value: ' \$ 5090', color: Colors.red),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _priceStat({required String label, required String value, required Color color}) {
+    return Row(
+      children: [
+        Text(label),
+        const SizedBox(width: 6),
+        Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: color)),
+      ],
+    );
+  }
+
+  // 規格表占位卡
+  Widget _specTablePlaceholder() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F6F6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x22000000)),
+      ),
+      child: const Text('這裡將來可放商品規格比較資訊，例如：重量、成分、規格、容量…等'),
     );
   }
 }

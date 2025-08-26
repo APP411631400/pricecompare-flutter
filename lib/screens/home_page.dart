@@ -16,6 +16,9 @@ import '../services/user_service.dart';
 import 'login_page.dart';      // ← 你的登入頁
 import 'register_page.dart';   // ← 若沒有註冊頁可先移除
 
+import 'package:google_sign_in/google_sign_in.dart'; // ★ 新增
+
+
 class HomePage extends StatefulWidget {
   @override
   State<HomePage> createState() => _HomePageState();
@@ -28,6 +31,8 @@ class _HomePageState extends State<HomePage> {
   String? _userName;
 
   bool _loggedIn = false; // ✅ 登入狀態
+  final GoogleSignIn _gsi = GoogleSignIn(scopes: const ['email']); // ★ 新增：只拿 email
+
 
   @override
   void initState() {
@@ -46,16 +51,37 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// ✅ 載入使用者顯示資訊與登入狀態
-  Future<void> _loadUser() async {
-    final name = await UserService.getUserName();
-    // 若你有 isLoggedIn() 就用它，沒有可用 name 是否存在來判斷
-    final isLogin = await UserService.isLoggedIn().catchError((_) => false);
-    setState(() {
-      _userName = name;
-      _loggedIn = (isLogin == true) || (name != null && name.isNotEmpty);
-    });
+  /// ✅ 載入使用者顯示資訊與登入狀態（保留原本 + 兼容 Google）
+Future<void> _loadUser() async {
+  // A) 你原本的本地邏輯（完全保留）
+  final name = await UserService.getUserName();
+  final isLogin = await UserService.isLoggedIn().catchError((_) => false);
+
+  // B) 追加：偵測 Google（先看 currentUser，沒有再靜默登入）
+  GoogleSignInAccount? acc = _gsi.currentUser;
+  if (acc == null) {
+    try {
+      acc = await _gsi.signInSilently(); // 曾授權過就會直接成功
+    } catch (_) {
+      // 靜默失敗不影響原本登入流程
+    }
   }
+  final bool googleLogin = acc != null;
+
+  // C) 決策：Google 優先當作顯示名稱；登入狀態為「本地 or Google 任何一邊成功」
+  setState(() {
+    _loggedIn = (isLogin == true) || googleLogin || (name != null && name.isNotEmpty);
+
+    if (googleLogin) {
+      // 用 Google 的名稱（沒有就用 email 前半段）
+      _userName = acc!.displayName ?? acc.email.split('@').first;
+    } else {
+      // 沿用你原本的名稱邏輯
+      _userName = name;
+    }
+  });
+}
+
 
   /// ✅ 呼叫後端搜尋 API（邏輯保留）
   Future<void> _search(String query) async {
@@ -98,20 +124,33 @@ class _HomePageState extends State<HomePage> {
   // ────────────────────── 登入/帳戶：公用方法 ──────────────────────
 
   /// 1) 確保已登入；未登入就導 LoginPage；成功後回傳 true
-  Future<bool> _ensureLogin() async {
-    final ok = await UserService.isLoggedIn().catchError((_) => false);
-    if (ok == true) return true;
+  /// 1) 確保已登入；未登入就導 LoginPage；成功後回傳 true（加入 Google 檢查）
+Future<bool> _ensureLogin() async {
+  // A. 先用你原本的本地判斷
+  final ok = await UserService.isLoggedIn().catchError((_) => false);
+  if (ok == true) return true;
 
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => LoginPage()), // ← 你的登入頁
-    );
-    if (result == true) {
-      await _loadUser(); // 重新抓名稱／狀態
-      return true;
-    }
-    return false;
+  // B. 追加：Google 判斷（currentUser -> signInSilently）
+  GoogleSignInAccount? acc = _gsi.currentUser;
+  if (acc == null) {
+    try {
+      acc = await _gsi.signInSilently();
+    } catch (_) {/* 忽略錯誤 */}
   }
+  if (acc != null) return true; // 已是 Google 登入，不用再去 LoginPage
+
+  // C. 真的沒登入才導到你的 LoginPage
+  final result = await Navigator.push<bool>(
+    context,
+    MaterialPageRoute(builder: (_) => LoginPage()),
+  );
+
+  if (result == true) {
+    await _loadUser(); // 回來後刷新首頁顯示
+    return true;
+  }
+  return false;
+}
 
   /// 2) 開啟會員中心（若未登入會先進登入）
   Future<void> _openUserCenter() async {
@@ -216,15 +255,24 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 4) 登出：關卡片、清狀態、提示
+  /// 4) 登出：關卡片、清狀態、提示（追加 Google 登出）
   Future<void> _logout() async {
     Navigator.pop(context); // 關掉彈出的卡
-    await UserService.logout(); // 清 prefs: token/name/isLoggedIn...
+
+    // ★ 新增：若有 Google 登入，一併登出（忽略錯誤）
+    try { await _gsi.disconnect(); } catch (_) {}
+    try { await _gsi.signOut(); } catch (_) {}
+
+    // 仍保留你原本的登出流程（清 prefs: token/name/isLoggedIn...）
+    await UserService.logout();
+
     setState(() {
       _loggedIn = false;
       _userName = null;
     });
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已登出')));
   }
+
 
 
   // ────────────────────── UI ──────────────────────

@@ -1,48 +1,116 @@
-// ✅ services/favorite_service.dart - 收藏功能管理器（支援新的比價商品結構）
+// lib/services/favorite_service.dart
+// Firestore 版收藏服務（未登入自動退回本機 SharedPreferences）
 
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';   // ✅ 修正
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/product_service.dart' as ps;
 
-/// 收藏功能服務類別：管理本地儲存的收藏商品資料
+// ⚠️ 你這支檔案就在 services/ 資料夾裡，所以路徑不用 ../services
+import 'product_service.dart' as ps;
+
 class FavoriteService {
-  static const _key = 'favorite_products'; // SharedPreferences 儲存鍵名
+  // ---------- Firestore 共用 ----------
+  static FirebaseFirestore get _db => FirebaseFirestore.instance;
+  static User? get _user => FirebaseAuth.instance.currentUser;
 
-  /// ✅ 加入收藏：將商品加入本地收藏清單
+  // ✅ 指名泛型 <Map<String, dynamic>>，避免推斷成 dynamic
+  static CollectionReference<Map<String, dynamic>> _col() =>
+      _db
+          .collection('users')
+          .doc(_user!.uid)
+          .collection('favorites');
+
+  // ---------- Public API（與你原本方法簽名一致） ----------
+
+  /// 加入收藏
   static Future<void> addToFavorites(ps.Product product) async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = await _getRawList();
+    if (_user == null) {
+      await _localAdd(product); // 未登入 → 本機
+      return;
+    }
 
-    // 以商品名稱為唯一 key（避免重複加入）
-    if (!list.any((item) => item['name'] == product.name)) {
-      // 儲存時將 map 結構壓平為 json-friendly 格式
+    await _col().doc(product.name).set({
+      'name': product.name,
+      'id': product.id,
+      'prices': product.prices,  // Map<String, double>
+      'links': product.links,    // Map<String, String>
+      'images': product.images,  // Map<String, String>
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// 移除收藏（以名稱為 docId）
+  static Future<void> removeFromFavorites(String name) async {
+    if (_user == null) {
+      await _localRemove(name);
+      return;
+    }
+    await _col().doc(name).delete();
+  }
+
+  /// 是否已收藏
+  static Future<bool> isFavorited(String name) async {
+    if (_user == null) return _localIsFavorited(name);
+    final doc = await _col().doc(name).get();
+    return doc.exists;
+  }
+
+  /// 取得所有收藏（回傳 ps.Product 清單）
+  static Future<List<ps.Product>> getFavorites() async {
+    if (_user == null) return _localGetFavorites();
+
+    final qs = await _col().orderBy('createdAt', descending: true).get();
+    return qs.docs.map((d) {
+      final data = d.data();
+      return ps.Product(
+        name: (data['name'] ?? '') as String,
+        id: (data['id'] ?? 0) as int,
+        prices: Map<String, double>.from(data['prices'] ?? const {}),
+        links: Map<String, String>.from(data['links'] ?? const {}),
+        images: Map<String, String>.from(data['images'] ?? const {}),
+      );
+    }).toList();
+  }
+
+  /// 收藏名稱清單
+  static Future<List<String>> getFavoriteNames() async {
+    final list = await getFavorites();
+    return list.map((p) => p.name).toList();
+  }
+
+  // ---------- 未登入時的本機 fallback ----------
+  static const _localKey = 'favorite_products';
+
+  static Future<void> _localAdd(ps.Product p) async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = await _localRawList();
+    if (!list.any((e) => e['name'] == p.name)) {
       list.add({
-        'name': product.name,
-        'id': product.id,
-        'prices': product.prices,
-        'links': product.links,
+        'name': p.name,
+        'id': p.id,
+        'prices': p.prices,
+        'links': p.links,
+        'images': p.images,
       });
-      await prefs.setString(_key, jsonEncode(list));
+      await prefs.setString(_localKey, jsonEncode(list));
     }
   }
 
-  /// ✅ 移除收藏：根據商品名稱移除
-  static Future<void> removeFromFavorites(String name) async {
+  static Future<void> _localRemove(String name) async {
     final prefs = await SharedPreferences.getInstance();
-    final list = await _getRawList();
-    list.removeWhere((item) => item['name'] == name);
-    await prefs.setString(_key, jsonEncode(list));
+    final list = await _localRawList();
+    list.removeWhere((e) => e['name'] == name);
+    await prefs.setString(_localKey, jsonEncode(list));
   }
 
-  /// ✅ 判斷某商品是否已被收藏（以名稱判斷）
-  static Future<bool> isFavorited(String name) async {
-    final list = await _getRawList();
-    return list.any((item) => item['name'] == name);
+  static Future<bool> _localIsFavorited(String name) async {
+    final list = await _localRawList();
+    return list.any((e) => e['name'] == name);
   }
 
-  /// ✅ 取得所有收藏的商品資料（轉回 ps.Product 類別）
-  static Future<List<ps.Product>> getFavorites() async {
-    final list = await _getRawList();
+  static Future<List<ps.Product>> _localGetFavorites() async {
+    final list = await _localRawList();
     return list.map<ps.Product>((item) {
       return ps.Product(
         name: item['name'] ?? '',
@@ -54,19 +122,14 @@ class FavoriteService {
     }).toList();
   }
 
-  /// ✅ 擷取所有已收藏的商品名稱（可用於 UI 判斷）
-  static Future<List<String>> getFavoriteNames() async {
-    final favorites = await getFavorites();
-    return favorites.map((p) => p.name).toList();
-  }
-
-  /// 🔧 取得原始 JSON 清單
-  static Future<List<dynamic>> _getRawList() async {
+  static Future<List<dynamic>> _localRawList() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
-    return raw != null ? jsonDecode(raw) : [];
+    final raw = prefs.getString(_localKey);
+    return raw != null ? jsonDecode(raw) : <dynamic>[];
   }
 }
+
+
 
 
 

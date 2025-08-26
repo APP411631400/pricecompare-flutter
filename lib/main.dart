@@ -13,9 +13,20 @@ import 'services/user_service.dart';
 // 📦 掃描紀錄資料結構與預載方法（假資料）
 import 'data/scan_history.dart';
 
+// +++ 新增 +++
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart'; // 由 flutterfire CLI 產生（下方 B 節有說明）
+
+
 void main() async {
   // ✅ 初始化 Flutter 執行環境，必要 for async/await 與插件初始化
   WidgetsFlutterBinding.ensureInitialized();
+
+    // +++ 新增：初始化 Firebase（一定要在 runApp 之前）
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
 
   // ✅ 預先載入掃描紀錄（通常會從本地檔案或資料庫讀取）
   await loadScanHistory();
